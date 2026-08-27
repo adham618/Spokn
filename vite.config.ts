@@ -1,0 +1,74 @@
+import { svelte } from '@sveltejs/vite-plugin-svelte';
+import { defineConfig } from 'vite';
+import webExtension from 'vite-plugin-web-extension';
+
+export default defineConfig({
+  root: '.',
+  plugins: [
+    svelte(),
+    webExtension({
+      manifest: () => ({
+        manifest_version: 3,
+        name: 'Spokn',
+        version: '1.0.0',
+        description: "Offline text-to-speech with word-by-word highlighting. Uses only your device's built-in voices.",
+        icons: {
+          '16': 'icons/icon16.png',
+          '32': 'icons/icon32.png',
+          '48': 'icons/icon48.png',
+          '128': 'icons/icon128.png',
+        },
+        action: {
+          default_popup: 'src/popup/popup.html',
+          default_icon: {
+            '16': 'icons/icon16.png',
+            '32': 'icons/icon32.png',
+            '48': 'icons/icon48.png',
+            '128': 'icons/icon128.png',
+          },
+        },
+        background: {
+          service_worker: 'src/background/background.ts',
+          type: 'module',
+        },
+        content_scripts: [
+          {
+            matches: ['<all_urls>'],
+            js: ['src/content/content.ts'],
+            css: ['src/content/content.css'],
+            run_at: 'document_idle',
+          },
+        ],
+        permissions: ['storage', 'activeTab', 'scripting'],
+        host_permissions: ['<all_urls>'],
+        commands: {
+          'toggle-play': {
+            suggested_key: { default: 'Alt+Shift+P' },
+            description: 'Play / Pause',
+          },
+          stop: {
+            suggested_key: { default: 'Alt+Shift+S' },
+            description: 'Stop',
+          },
+          'read-selection': {
+            suggested_key: { default: 'Alt+Shift+R' },
+            description: 'Read selected text',
+          },
+        },
+      }),
+      disableAutoLaunch: true,
+      printSummary: true,
+      // Use relative base for popup HTML so asset paths resolve in extension context
+      htmlViteConfig: {
+        base: './',
+      },
+    }),
+  ],
+  build: {
+    outDir: 'dist',
+    emptyOutDir: true,
+    target: 'es2022',
+    minify: false,
+    sourcemap: false,
+  },
+});

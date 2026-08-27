@@ -1,0 +1,55 @@
+/* ────────────────────────────────────────────────────────────────────────────
+   Spokn Content Script Styles
+   Injected into every host page. All classes are namespaced with `spokn-`
+   to avoid collisions.
+   ──────────────────────────────────────────────────────────────────────────── */
+
+/* ── Word spans injected by textWalker ──────────────────────────────────────── */
+
+.spokn-word {
+  display: inline;
+  border-radius: 3px;
+  transition: background-color 0.08s ease;
+}
+
+.spokn-word-active {
+  background-color: #FFE066 !important;
+  color: #1a1a2e !important;
+  border-radius: 3px;
+  /* No layout shift — padding is balanced with negative margin */
+  padding: 1px 2px;
+  margin: -1px -2px;
+}
+
+/* ── Sentence spans ────────────────────────────────────────────────────────── */
+
+.spokn-sentence {
+  display: inline;
+  border-radius: 4px;
+  transition: background-color 0.15s ease;
+}
+
+.spokn-sentence-active {
+  background-color: rgba(124, 58, 237, 0.13) !important;
+  border-radius: 4px;
+}
+
+/* ── Click-to-read hover outline ─────────────────────────────────────────── */
+
+.spokn-clickable-hover {
+  outline: 2px solid rgba(124, 58, 237, 0.55) !important;
+  outline-offset: 3px;
+  border-radius: 4px;
+  cursor: pointer !important;
+}
+
+/* ── Pulse animation for word transitions ────────────────────────────────── */
+
+@keyframes spokn-word-in {
+  from { background-color: rgba(255, 224, 102, 0.4); }
+  to   { background-color: #FFE066; }
+}
+
+.spokn-word-active {
+  animation: spokn-word-in 0.08s ease forwards;
+}
