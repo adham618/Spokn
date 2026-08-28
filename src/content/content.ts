@@ -145,6 +145,7 @@ async function startReading(
   }
 
   // Walk DOM — reuse existing walkResult if already walked (e.g. from toolbar open)
+  let startWordIndex = 0;
   try {
     if (mode === 'selection') {
       // Selection always needs a fresh walk
@@ -154,13 +155,18 @@ async function startReading(
       LOG('selection:', sel?.toString().slice(0, 60));
       walkResult = walkSelection();
     } else if (!walkResult) {
-      // Page walk not done yet
-      const all = walkPage();
-      LOG('walkPage words:', all.words.length);
-      walkResult = fromElement ? sliceFrom(all, fromElement) : all;
-    } else if (fromElement) {
-      // Re-slice existing walk from click target
-      walkResult = sliceFrom(walkResult, fromElement);
+      // Page walk not done yet — do it now
+      walkResult = walkPage();
+      LOG('walkPage words:', walkResult.words.length);
+    }
+    // If a click element was provided, start from that word (or the first word
+    // inside the clicked paragraph). Using isSameNode first handles the case
+    // where fromElement IS the word span itself.
+    if (fromElement && walkResult) {
+      const idx = walkResult.words.findIndex(
+        w => w.span.isSameNode(fromElement) || fromElement.contains(w.span),
+      );
+      if (idx > 0) startWordIndex = idx;
     }
   } catch (e) {
     ERR('DOM walk failed:', e);
@@ -174,9 +180,8 @@ async function startReading(
       // No selection — fall back to reading the full page
       LOG('No selection found, falling back to page mode');
       try {
-        const all = walkPage();
-        LOG('walkPage fallback words:', all.words.length);
-        walkResult = all;
+        walkResult = walkPage();
+        LOG('walkPage fallback words:', walkResult.words.length);
       } catch (e) {
         ERR('DOM walk fallback failed:', e);
         showToolbarError('Could not read page content. Try a different page.');
@@ -224,6 +229,7 @@ async function startReading(
         setState({
           status: 'playing', mode, voiceName, rate, pitch, volume,
           totalWords: walkResult?.words.length ?? 0,
+          wordIndex: startWordIndex,
         });
         break;
 
@@ -263,7 +269,7 @@ async function startReading(
   });
 
   try {
-    await tts.play(walkResult.words);
+    await tts.play(walkResult.words, startWordIndex);
   } catch (e) {
     ERR('tts.play() threw:', e);
     showToolbarError('Playback failed. Check console for details.');
@@ -302,24 +308,6 @@ function showToolbarError(msg: string): void {
       }
     }, 4000);
   }
-}
-
-/** Slice a WalkResult to only words at/after a given element. */
-function sliceFrom(all: WalkResult, from: Element): WalkResult {
-  const idx = all.words.findIndex(w => from.contains(w.span));
-  if (idx <= 0) return all;
-  all.words.slice(0, idx).forEach(w => {
-    const parent = w.span.parentNode;
-    if (!parent) return;
-    parent.replaceChild(document.createTextNode(w.word), w.span);
-  });
-  const offsetBase = all.charOffsets[idx] ?? 0;
-  return {
-    words: all.words.slice(idx),
-    fullText: all.words.slice(idx).map(w => w.word).join(' '),
-    charOffsets: all.charOffsets.slice(idx).map(o => o - offsetBase),
-    restore: all.restore,
-  };
 }
 
 // ─── Word hover highlight ─────────────────────────────────────────────────────
@@ -407,7 +395,15 @@ function onClickRead(e: MouseEvent): void {
   e.preventDefault();
   e.stopPropagation();
   (el as Element).classList.remove('spokn-clickable-hover');
-  startReading('page', el as Element).catch(ex => ERR('click-to-read threw:', ex));
+
+  // If the user clicked directly on a word span, pass that span so playback
+  // starts from that exact word rather than the start of the paragraph.
+  const target = e.target as Element;
+  const clickedSpan = target.classList.contains(WORD_CLASS)
+    ? target
+    : target.closest(`.${WORD_CLASS}`);
+
+  startReading('page', (clickedSpan ?? el) as Element).catch(ex => ERR('click-to-read threw:', ex));
 }
 
 // ─── Toolbar teardown ─────────────────────────────────────────────────────────

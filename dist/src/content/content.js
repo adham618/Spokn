@@ -1398,7 +1398,7 @@
         }
       }, 80);
     }
-    async play(words) {
+    async play(words, startWordIndex = 0) {
       this.stop();
       if (words.length === 0) return;
       speechSynthesis.cancel();
@@ -1406,13 +1406,25 @@
       if (speechSynthesis.speaking || speechSynthesis.pending) {
         await new Promise((resolve) => setTimeout(resolve, 300));
       }
+      const clampedStart = Math.max(0, Math.min(startWordIndex, words.length - 1));
       this.chunks = buildChunks(words);
-      this.chunkIndex = 0;
+      const startChunkIndex = this.chunks.findIndex(
+        (c) => c.globalOffset + c.words.length > clampedStart
+      );
+      this.chunkIndex = startChunkIndex >= 0 ? startChunkIndex : 0;
+      const startChunk = this.chunks[this.chunkIndex];
+      if (startChunk && clampedStart > startChunk.globalOffset) {
+        const localOffset = clampedStart - startChunk.globalOffset;
+        this.chunks[this.chunkIndex] = {
+          words: startChunk.words.slice(localOffset),
+          globalOffset: clampedStart
+        };
+      }
       this.highlighter = new Highlighter(words);
       this.isPaused = false;
       this.isStopped = false;
       this.emit({ type: "start" });
-      await this.playChunk(0);
+      await this.playChunk(this.chunkIndex);
     }
     pause() {
       if (this.isStopped || this.isPaused) return;
@@ -1664,6 +1676,7 @@
       tts.stop();
       tts = null;
     }
+    let startWordIndex = 0;
     try {
       if (mode === "selection") {
         walkResult?.restore();
@@ -1672,11 +1685,14 @@
         LOG("selection:", sel?.toString().slice(0, 60));
         walkResult = walkSelection();
       } else if (!walkResult) {
-        const all = walkPage();
-        LOG("walkPage words:", all.words.length);
-        walkResult = fromElement ? sliceFrom(all, fromElement) : all;
-      } else if (fromElement) {
-        walkResult = sliceFrom(walkResult, fromElement);
+        walkResult = walkPage();
+        LOG("walkPage words:", walkResult.words.length);
+      }
+      if (fromElement && walkResult) {
+        const idx = walkResult.words.findIndex(
+          (w) => w.span.isSameNode(fromElement) || fromElement.contains(w.span)
+        );
+        if (idx > 0) startWordIndex = idx;
       }
     } catch (e) {
       ERR("DOM walk failed:", e);
@@ -1687,9 +1703,8 @@
       ERR("No readable words found for mode:", mode);
       if (mode === "selection") {
         try {
-          const all = walkPage();
-          LOG("walkPage fallback words:", all.words.length);
-          walkResult = all;
+          walkResult = walkPage();
+          LOG("walkPage fallback words:", walkResult.words.length);
         } catch (e) {
           ERR("DOM walk fallback failed:", e);
           showToolbarError("Could not read page content. Try a different page.");
@@ -1728,7 +1743,8 @@
             rate,
             pitch,
             volume,
-            totalWords: walkResult?.words.length ?? 0
+            totalWords: walkResult?.words.length ?? 0,
+            wordIndex: startWordIndex
           });
           break;
         case "word": {
@@ -1760,7 +1776,7 @@
       }
     });
     try {
-      await tts.play(walkResult.words);
+      await tts.play(walkResult.words, startWordIndex);
     } catch (e) {
       ERR("tts.play() threw:", e);
       showToolbarError("Playback failed. Check console for details.");
@@ -1794,22 +1810,6 @@
         }
       }, 4e3);
     }
-  }
-  function sliceFrom(all, from) {
-    const idx = all.words.findIndex((w) => from.contains(w.span));
-    if (idx <= 0) return all;
-    all.words.slice(0, idx).forEach((w) => {
-      const parent = w.span.parentNode;
-      if (!parent) return;
-      parent.replaceChild(document.createTextNode(w.word), w.span);
-    });
-    const offsetBase = all.charOffsets[idx] ?? 0;
-    return {
-      words: all.words.slice(idx),
-      fullText: all.words.slice(idx).map((w) => w.word).join(" "),
-      charOffsets: all.charOffsets.slice(idx).map((o) => o - offsetBase),
-      restore: all.restore
-    };
   }
   let wordHoverEnabled = false;
   function onWordMouseOver(e) {
@@ -1876,7 +1876,9 @@
     e.preventDefault();
     e.stopPropagation();
     el.classList.remove("spokn-clickable-hover");
-    startReading("page", el).catch((ex) => ERR("click-to-read threw:", ex));
+    const target = e.target;
+    const clickedSpan = target.classList.contains(WORD_CLASS) ? target : target.closest(`.${WORD_CLASS}`);
+    startReading("page", clickedSpan ?? el).catch((ex) => ERR("click-to-read threw:", ex));
   }
   function teardown() {
     const t = toolbar;

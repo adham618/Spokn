@@ -150,7 +150,7 @@ export class TTS {
     }, 80);
   }
 
-  async play(words: WordNode[]): Promise<void> {
+  async play(words: WordNode[], startWordIndex = 0): Promise<void> {
     this.stop();
     if (words.length === 0) return;
 
@@ -164,16 +164,36 @@ export class TTS {
       await new Promise<void>(resolve => setTimeout(resolve, 300));
     }
 
-    if (import.meta.env.DEV) console.log('[Spokn TTS] play() — words:', words.length, '— chunks will be built');
+    // Clamp startWordIndex to valid range
+    const clampedStart = Math.max(0, Math.min(startWordIndex, words.length - 1));
+
+    if (import.meta.env.DEV) console.log('[Spokn TTS] play() — words:', words.length, '— startWordIndex:', clampedStart, '— chunks will be built');
     this.chunks = buildChunks(words);
     if (import.meta.env.DEV) console.log('[Spokn TTS] chunks:', this.chunks.length);
-    this.chunkIndex = 0;
+
+    // Find the chunk that contains the start word
+    const startChunkIndex = this.chunks.findIndex(
+      c => c.globalOffset + c.words.length > clampedStart,
+    );
+    this.chunkIndex = startChunkIndex >= 0 ? startChunkIndex : 0;
+
+    // If the start word is in the middle of a chunk, trim that chunk so speech
+    // begins at exactly the clicked word, not at the chunk boundary.
+    const startChunk = this.chunks[this.chunkIndex];
+    if (startChunk && clampedStart > startChunk.globalOffset) {
+      const localOffset = clampedStart - startChunk.globalOffset;
+      this.chunks[this.chunkIndex] = {
+        words: startChunk.words.slice(localOffset),
+        globalOffset: clampedStart,
+      };
+    }
+
     this.highlighter = new Highlighter(words);
     this.isPaused = false;
     this.isStopped = false;
 
     this.emit({ type: 'start' });
-    await this.playChunk(0);
+    await this.playChunk(this.chunkIndex);
   }
 
   pause(): void {
