@@ -1299,7 +1299,7 @@
       }
     }
   }
-  const MAX_CHUNK_WORDS = 50;
+  const MAX_CHUNK_WORDS = 25;
   function buildChunks(words) {
     const chunks = [];
     let i = 0;
@@ -1346,7 +1346,8 @@
     // Watchdog for the tab-switch stall bug
     watchdogTimer = null;
     lastBoundaryTime = 0;
-    WATCHDOG_MS = 3e3;
+    WATCHDOG_MS = 2e3;
+    // macOS can stall quickly — check every 2 s
     // Tracks charIndex offset for the current chunk
     chunkCharOffset = 0;
     constructor(options) {
@@ -1378,6 +1379,11 @@
     async play(words) {
       this.stop();
       if (words.length === 0) return;
+      speechSynthesis.cancel();
+      await new Promise((resolve) => setTimeout(resolve, 150));
+      if (speechSynthesis.speaking || speechSynthesis.pending) {
+        await new Promise((resolve) => setTimeout(resolve, 300));
+      }
       this.chunks = buildChunks(words);
       this.chunkIndex = 0;
       this.highlighter = new Highlighter(words);
@@ -1411,6 +1417,7 @@
       this.isPaused = false;
       this.clearWatchdog();
       speechSynthesis.cancel();
+      setTimeout(() => speechSynthesis.cancel(), 150);
       this.highlighter?.clearAll();
       this.highlighter = null;
       this.emit({ type: "stop" });
@@ -1491,9 +1498,9 @@
           this.playChunk(index + 1);
         }
       };
-      if (speechSynthesis.speaking) {
+      if (speechSynthesis.speaking || speechSynthesis.pending) {
         speechSynthesis.cancel();
-        setTimeout(() => speechSynthesis.speak(utter), 80);
+        setTimeout(() => speechSynthesis.speak(utter), 200);
       } else {
         speechSynthesis.speak(utter);
       }
@@ -1508,12 +1515,14 @@
         }
         const elapsed = Date.now() - this.lastBoundaryTime;
         if (elapsed > this.WATCHDOG_MS && speechSynthesis.speaking) {
+          this.clearWatchdog();
           speechSynthesis.cancel();
           setTimeout(() => {
             if (!this.isStopped && !this.isPaused) {
+              this.lastBoundaryTime = Date.now();
               this.speakChunk(chunkIndex);
             }
-          }, 200);
+          }, 300);
         }
       }, this.WATCHDOG_MS);
     }
@@ -1596,7 +1605,9 @@
         },
         onModeChange: async (mode) => {
           state.mode = mode;
-          await chrome.storage.sync.set({ mode });
+          if (mode !== "selection") {
+            await chrome.storage.sync.set({ mode });
+          }
         },
         onThemeChange: async (themeId) => {
           currentTheme = themeId;
@@ -1650,11 +1661,24 @@
     if (walkResult.words.length === 0) {
       ERR("No readable words found for mode:", mode);
       if (mode === "selection") {
-        showToolbarError("No text selected. Highlight some text first.");
+        try {
+          const all = walkPage();
+          LOG("walkPage fallback words:", all.words.length);
+          walkResult = all;
+        } catch (e) {
+          ERR("DOM walk fallback failed:", e);
+          showToolbarError("Could not read page content. Try a different page.");
+          return;
+        }
+        if (walkResult.words.length === 0) {
+          showToolbarError("No readable text found on this page.");
+          return;
+        }
+        mode = "page";
       } else {
         showToolbarError("No readable text found on this page.");
+        return;
       }
-      return;
     }
     LOG("words to speak:", walkResult.words.length, "— first:", walkResult.words[0]?.word);
     enableWordHover();
@@ -2004,7 +2028,10 @@
       if (stored.rate != null) state.rate = stored.rate;
       if (stored.pitch != null) state.pitch = stored.pitch;
       if (stored.volume != null) state.volume = stored.volume;
-      if (stored.mode) state.mode = stored.mode;
+      if (stored.mode && stored.mode !== "selection") state.mode = stored.mode;
+      if (stored.mode === "selection") {
+        await chrome.storage.sync.set({ mode: "page" });
+      }
       if (stored.hoverBorderEnabled != null) hoverBorderEnabled = stored.hoverBorderEnabled;
       if (stored.highlightTheme) {
         currentTheme = stored.highlightTheme;

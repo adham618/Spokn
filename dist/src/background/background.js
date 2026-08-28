@@ -34,7 +34,7 @@
   chrome.runtime.onInstalled.addListener(() => {
     chrome.contextMenus.create({
       id: "spokn-read-selection",
-      title: "▶ Read selection with Spokn",
+      title: "Read selection with Spokn",
       contexts: ["selection"]
       // only appears when text is selected
     });

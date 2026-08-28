@@ -93,7 +93,10 @@ function createToolbar(): FloatingToolbar {
       onModeChange: async (mode) => {
         LOG('modeChange:', mode);
         state.mode = mode;
-        await chrome.storage.sync.set({ mode });
+        // 'selection' is transient — don't persist it
+        if (mode !== 'selection') {
+          await chrome.storage.sync.set({ mode });
+        }
       },
       onThemeChange: async (themeId) => {
         LOG('themeChange:', themeId);
@@ -168,11 +171,27 @@ async function startReading(
   if (walkResult.words.length === 0) {
     ERR('No readable words found for mode:', mode);
     if (mode === 'selection') {
-      showToolbarError('No text selected. Highlight some text first.');
+      // No selection — fall back to reading the full page
+      LOG('No selection found, falling back to page mode');
+      try {
+        const all = walkPage();
+        LOG('walkPage fallback words:', all.words.length);
+        walkResult = all;
+      } catch (e) {
+        ERR('DOM walk fallback failed:', e);
+        showToolbarError('Could not read page content. Try a different page.');
+        return;
+      }
+      if (walkResult.words.length === 0) {
+        showToolbarError('No readable text found on this page.');
+        return;
+      }
+      // Update mode so state reflects what we're actually doing
+      mode = 'page';
     } else {
       showToolbarError('No readable text found on this page.');
+      return;
     }
-    return;
   }
 
   LOG('words to speak:', walkResult.words.length, '— first:', walkResult.words[0]?.word);
@@ -615,7 +634,12 @@ chrome.runtime.onMessage.addListener(
     if (stored.rate   != null) state.rate   = stored.rate   as number;
     if (stored.pitch  != null) state.pitch  = stored.pitch  as number;
     if (stored.volume != null) state.volume = stored.volume as number;
-    if (stored.mode)           state.mode   = stored.mode   as typeof state.mode;
+    // 'selection' is a transient mode — don't restore it across sessions
+    if (stored.mode && stored.mode !== 'selection') state.mode = stored.mode as typeof state.mode;
+    // Clear stale 'selection' from storage if it was saved by an older version
+    if (stored.mode === 'selection') {
+      await chrome.storage.sync.set({ mode: 'page' });
+    }
     if (stored.hoverBorderEnabled != null) hoverBorderEnabled = stored.hoverBorderEnabled as boolean;
     if (stored.highlightTheme) {
       currentTheme = stored.highlightTheme as string;

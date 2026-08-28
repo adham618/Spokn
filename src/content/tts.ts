@@ -39,7 +39,7 @@ export type TTSListener = (event: TTSEvent) => void;
  * Split a flat word array into chunks of ≤ MAX_WORDS words.
  * We also never cut in the middle of a sentence (sentenceIndex boundary).
  */
-const MAX_CHUNK_WORDS = 50; // ~15 s at 1x speed for typical prose
+const MAX_CHUNK_WORDS = 25; // ~7 s at 1x speed — smaller chunks reduce macOS stuck-speech risk
 
 interface Chunk {
   words: WordNode[];
@@ -113,7 +113,7 @@ export class TTS {
   // Watchdog for the tab-switch stall bug
   private watchdogTimer: ReturnType<typeof setTimeout> | null = null;
   private lastBoundaryTime = 0;
-  private WATCHDOG_MS = 3000;
+  private WATCHDOG_MS = 2000; // macOS can stall quickly — check every 2 s
 
   // Tracks charIndex offset for the current chunk
   private chunkCharOffset = 0;
@@ -153,6 +153,16 @@ export class TTS {
   async play(words: WordNode[]): Promise<void> {
     this.stop();
     if (words.length === 0) return;
+
+    // Hard-reset speechSynthesis — on macOS/Chrome it can get permanently stuck
+    // after a long utterance was interrupted. cancel() + a short delay clears it.
+    speechSynthesis.cancel();
+    await new Promise<void>(resolve => setTimeout(resolve, 150));
+
+    // If still reporting as speaking after the delay, wait one more cycle
+    if (speechSynthesis.speaking || speechSynthesis.pending) {
+      await new Promise<void>(resolve => setTimeout(resolve, 300));
+    }
 
     if (import.meta.env.DEV) console.log('[Spokn TTS] play() — words:', words.length, '— chunks will be built');
     this.chunks = buildChunks(words);
@@ -195,7 +205,9 @@ export class TTS {
     this.isStopped = true;
     this.isPaused = false;
     this.clearWatchdog();
+    // Double-cancel with a follow-up to ensure macOS fully releases the engine
     speechSynthesis.cancel();
+    setTimeout(() => speechSynthesis.cancel(), 150);
     this.highlighter?.clearAll();
     this.highlighter = null;
     this.emit({ type: 'stop' });
@@ -302,10 +314,10 @@ export class TTS {
     };
 
     // Chrome requires cancel() before each speak() if already speaking
-    if (speechSynthesis.speaking) {
+    if (speechSynthesis.speaking || speechSynthesis.pending) {
       speechSynthesis.cancel();
-      // Small delay lets Chrome clear its queue
-      setTimeout(() => speechSynthesis.speak(utter), 80);
+      // macOS needs more time to clear its synthesis queue than other platforms
+      setTimeout(() => speechSynthesis.speak(utter), 200);
     } else {
       speechSynthesis.speak(utter);
     }
@@ -322,13 +334,17 @@ export class TTS {
       }
       const elapsed = Date.now() - this.lastBoundaryTime;
       if (elapsed > this.WATCHDOG_MS && speechSynthesis.speaking) {
-        // Stalled — cancel and restart this chunk
+        // Stalled — hard cancel, wait for macOS to fully release the engine,
+        // then restart the chunk. The longer delay (300 ms) is needed on macOS.
+        if (import.meta.env.DEV) console.warn('[Spokn TTS] watchdog triggered — restarting chunk', chunkIndex);
+        this.clearWatchdog();
         speechSynthesis.cancel();
         setTimeout(() => {
           if (!this.isStopped && !this.isPaused) {
+            this.lastBoundaryTime = Date.now(); // reset so watchdog doesn't re-trigger immediately
             this.speakChunk(chunkIndex);
           }
-        }, 200);
+        }, 300);
       }
     }, this.WATCHDOG_MS);
   }

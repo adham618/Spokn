@@ -57,7 +57,8 @@
     if (stored.rate != null) playbackState.rate = stored.rate as number;
     if (stored.pitch != null) playbackState.pitch = stored.pitch as number;
     if (stored.volume != null) playbackState.volume = stored.volume as number;
-    if (stored.mode) playbackState.mode = stored.mode as ReadingMode;
+    // 'selection' is a transient mode — don't restore it across sessions
+    if (stored.mode && stored.mode !== 'selection') playbackState.mode = stored.mode as ReadingMode;
 
     // Listen for state updates pushed from content script via background
     chrome.runtime.onMessage.addListener(handleBackgroundMessage);
@@ -110,7 +111,10 @@
 
   async function handleModeChange(mode: ReadingMode) {
     playbackState = { ...playbackState, mode };
-    await chrome.storage.sync.set({ mode });
+    // 'selection' is transient — don't persist it
+    if (mode !== 'selection') {
+      await chrome.storage.sync.set({ mode });
+    }
     // If switching away from click mode while it's active, disable it
     if (mode !== 'click') {
       await sendToTab({ type: 'CLICK_TO_READ_TOGGLE', enabled: false });
