@@ -18,8 +18,8 @@
  * Exposes a clean TTS class used by content.ts.
  */
 
-import type { WordNode } from './textWalker.js';
 import { Highlighter } from './highlighter.js';
+import type { WordNode } from './textWalker.js';
 
 export type TTSEventType = 'start' | 'pause' | 'resume' | 'stop' | 'word' | 'end';
 
@@ -139,10 +139,11 @@ export class TTS {
 
   async play(words: WordNode[]): Promise<void> {
     this.stop();
-
     if (words.length === 0) return;
 
+    if (import.meta.env.DEV) console.log('[Spokn TTS] play() — words:', words.length, '— chunks will be built');
     this.chunks = buildChunks(words);
+    if (import.meta.env.DEV) console.log('[Spokn TTS] chunks:', this.chunks.length);
     this.chunkIndex = 0;
     this.highlighter = new Highlighter(words);
     this.isPaused = false;
@@ -214,6 +215,8 @@ export class TTS {
     if (!chunk) return;
 
     const text = chunk.words.map(w => w.word).join(' ');
+    if (import.meta.env.DEV) console.log(`[Spokn TTS] speakChunk(${index}) — "${text.slice(0, 60)}…"`);
+
     const utter = new SpeechSynthesisUtterance(text);
 
     // Apply options
@@ -277,7 +280,7 @@ export class TTS {
     utter.onerror = (e: SpeechSynthesisErrorEvent) => {
       // 'interrupted' is normal when we call cancel() — not an actual error
       if (e.error === 'interrupted' || e.error === 'canceled') return;
-      console.warn('[Spokn] TTS error:', e.error);
+      console.error('[Spokn TTS] SpeechSynthesisUtterance error:', e.error, '— chunk:', index);
       this.clearWatchdog();
       if (!this.isStopped && !this.isPaused) {
         // Skip this chunk and continue

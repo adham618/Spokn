@@ -19,13 +19,13 @@ export default defineConfig({
           '128': 'icons/icon128.png',
         },
         action: {
-          default_popup: 'src/popup/popup.html',
           default_icon: {
             '16': 'icons/icon16.png',
             '32': 'icons/icon32.png',
             '48': 'icons/icon48.png',
             '128': 'icons/icon128.png',
           },
+          // No default_popup — clicking the icon fires action.onClicked in background
         },
         background: {
           service_worker: 'src/background/background.ts',
@@ -33,14 +33,15 @@ export default defineConfig({
         },
         content_scripts: [
           {
-            matches: ['<all_urls>'],
+            matches: ['<all_urls>', 'file:///*'],
             js: ['src/content/content.ts'],
             css: ['src/content/content.css'],
             run_at: 'document_idle',
+            all_frames: true,
           },
         ],
-        permissions: ['storage', 'activeTab', 'scripting'],
-        host_permissions: ['<all_urls>'],
+        permissions: ['storage', 'activeTab', 'scripting', 'contextMenus'],
+        host_permissions: ['<all_urls>', 'file:///*'],
         commands: {
           'toggle-play': {
             suggested_key: { default: 'Alt+Shift+P' },

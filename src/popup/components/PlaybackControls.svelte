@@ -170,7 +170,7 @@
   }
 
   .mode-btn.active {
-    background: #7c3aed;
+    background: #0ea5e9;
     color: #fff;
     font-weight: 600;
   }
@@ -189,7 +189,7 @@
 
   .progress-fill {
     height: 100%;
-    background: linear-gradient(90deg, #7c3aed, #a855f7);
+    background: linear-gradient(90deg, #0ea5e9, #38bdf8);
     border-radius: 3px;
     transition: width 0.3s ease;
   }
@@ -237,7 +237,7 @@
     background: rgba(255,255,255,0.04);
     border-radius: 6px;
     padding: 6px 10px;
-    border-left: 2px solid rgba(124, 58, 237, 0.4);
+    border-left: 2px solid rgba(14, 165, 233, 0.4);
     line-height: 1.4;
     font-style: italic;
   }
@@ -269,14 +269,14 @@
   }
 
   .btn-play {
-    background: #7c3aed;
+    background: #0ea5e9;
     color: #fff;
   }
 
   .btn-play:hover:not(:disabled) {
-    background: #6d28d9;
+    background: #0284c7;
     transform: translateY(-1px);
-    box-shadow: 0 4px 12px rgba(124, 58, 237, 0.4);
+    box-shadow: 0 4px 12px rgba(14, 165, 233, 0.4);
   }
 
   .btn-play:active:not(:disabled) {
@@ -284,13 +284,13 @@
   }
 
   .btn-pause {
-    background: rgba(124, 58, 237, 0.2);
-    color: #a78bfa;
-    border: 1px solid rgba(124, 58, 237, 0.4);
+    background: rgba(14, 165, 233, 0.2);
+    color: #38bdf8;
+    border: 1px solid rgba(14, 165, 233, 0.4);
   }
 
   .btn-pause:hover:not(:disabled) {
-    background: rgba(124, 58, 237, 0.3);
+    background: rgba(14, 165, 233, 0.3);
   }
 
   .btn-stop {

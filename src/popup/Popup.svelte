@@ -1,13 +1,13 @@
 <script lang="ts">
-  import { onMount, onDestroy } from 'svelte';
-  import type { PlaybackState, ReadingMode } from '../shared/types.js';
+  import { onDestroy, onMount } from 'svelte';
   import type { Message } from '../shared/messages.js';
+  import type { PlaybackState, ReadingMode } from '../shared/types.js';
   import { DEFAULT_STATE } from '../shared/types.js';
-  import VoicePicker from './components/VoicePicker.svelte';
-  import SpeedSlider from './components/SpeedSlider.svelte';
   import PitchSlider from './components/PitchSlider.svelte';
-  import VolumeSlider from './components/VolumeSlider.svelte';
   import PlaybackControls from './components/PlaybackControls.svelte';
+  import SpeedSlider from './components/SpeedSlider.svelte';
+  import VoicePicker from './components/VoicePicker.svelte';
+  import VolumeSlider from './components/VolumeSlider.svelte';
 
   // ── Reactive state ───────────────────────────────────────────────────────
   let playbackState: PlaybackState = $state({ ...DEFAULT_STATE });
@@ -162,7 +162,7 @@
         aria-expanded={settingsOpen}
         title="Settings"
       >
-        ⚙
+        <span aria-hidden="true">&#9881;</span>
       </button>
     </div>
   </header>
@@ -224,15 +224,15 @@
   <!-- Footer: Ko-fi donation -->
   <footer class="footer">
     <a
-      href="https://ko-fi.com/spokn"
+      href={import.meta.env.VITE_KOFI_URL}
       target="_blank"
       rel="noopener noreferrer"
       class="kofi-btn"
-      aria-label="Support Spokn on Ko-fi"
+      aria-label="Support {import.meta.env.VITE_APP_NAME} on Ko-fi"
     >
       ☕ Support development
     </a>
-    <span class="version">v1.0.0</span>
+    <span class="version">v{import.meta.env.VITE_APP_VERSION}</span>
   </footer>
 
   <!-- Toast notification -->
@@ -249,7 +249,7 @@
   .popup {
     width: 360px;
     min-height: 480px;
-    background: #1a1a2e;
+    background: #0a0a0f;
     color: #f1f5f9;
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
     font-size: 13px;
@@ -267,7 +267,7 @@
     justify-content: space-between;
     padding: 16px 18px 12px;
     border-bottom: 1px solid rgba(255, 255, 255, 0.06);
-    background: #16213e;
+    background: #111118;
   }
 
   .logo {
@@ -286,7 +286,7 @@
     font-weight: 700;
     color: #f1f5f9;
     letter-spacing: -0.3px;
-    background: linear-gradient(135deg, #f1f5f9 0%, #a78bfa 100%);
+    background: linear-gradient(135deg, #f1f5f9 0%, #38bdf8 100%);
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
     background-clip: text;
@@ -319,9 +319,9 @@
   }
 
   .icon-btn.active {
-    background: rgba(124, 58, 237, 0.2);
-    color: #a78bfa;
-    border-color: rgba(124, 58, 237, 0.4);
+    background: rgba(14, 165, 233, 0.2);
+    color: #38bdf8;
+    border-color: rgba(14, 165, 233, 0.4);
   }
 
   /* ── Sections ── */
@@ -436,7 +436,7 @@
     border-radius: 20px;
     font-size: 12px;
     white-space: nowrap;
-    border: 1px solid rgba(124, 58, 237, 0.4);
+    border: 1px solid rgba(14, 165, 233, 0.4);
     box-shadow: 0 4px 12px rgba(0,0,0,0.4);
     animation: fadeIn 0.15s ease;
     pointer-events: none;

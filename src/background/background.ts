@@ -2,23 +2,17 @@ import type { Message, MessageResponse } from '../shared/messages.js';
 import type { PlaybackState } from '../shared/types.js';
 import { DEFAULT_STATE } from '../shared/types.js';
 
-// Global playback state tracked by the service worker
 let globalState: PlaybackState = { ...DEFAULT_STATE };
-
-// Track which tab is currently reading
 let activeTabId: number | null = null;
 
-// ─── Helpers ────────────────────────────────────────────────────────────────
+// ─── Helpers ─────────────────────────────────────────────────────────────────
 
 async function getActiveTab(): Promise<chrome.tabs.Tab | null> {
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
   return tab ?? null;
 }
 
-async function sendToContentScript(
-  tabId: number,
-  message: Message,
-): Promise<MessageResponse> {
+async function sendToTab(tabId: number, message: Message): Promise<MessageResponse> {
   try {
     const response = await chrome.tabs.sendMessage(tabId, message);
     return response as MessageResponse;
@@ -27,41 +21,56 @@ async function sendToContentScript(
   }
 }
 
-async function broadcastStateToPopup(state: PlaybackState): Promise<void> {
-  // Send to all extension views (popup)
-  try {
-    await chrome.runtime.sendMessage({ type: 'STATE_UPDATE', state } satisfies Message);
-  } catch {
-    // Popup may not be open — that's fine
-  }
-}
+// ─── Extension icon click → toggle floating toolbar ───────────────────────────
 
-// ─── Message Handler ─────────────────────────────────────────────────────────
+chrome.action.onClicked.addListener(async (tab) => {
+  if (!tab.id) return;
+  activeTabId = tab.id;
+  await sendToTab(tab.id, { type: 'TOGGLE_TOOLBAR' });
+});
+
+// ─── Context menu — "Read selection" ─────────────────────────────────────────
+
+chrome.runtime.onInstalled.addListener(() => {
+  chrome.contextMenus.create({
+    id: 'spokn-read-selection',
+    title: '▶ Read selection with Spokn',
+    contexts: ['selection'],   // only appears when text is selected
+  });
+});
+
+chrome.contextMenus.onClicked.addListener(async (info, tab) => {
+  if (info.menuItemId !== 'spokn-read-selection' || !tab?.id) return;
+  activeTabId = tab.id;
+
+  // Show toolbar first (if not already visible), then read the selection
+  const res = await sendToTab(tab.id, { type: 'READ_SELECTION' });
+  if (!res.success) {
+    console.error('[Spokn BG] READ_SELECTION failed:', res.error);
+  }
+});
+
+// ─── Message handler ──────────────────────────────────────────────────────────
 
 chrome.runtime.onMessage.addListener(
   (rawMsg: unknown, sender, sendResponse) => {
     const msg = rawMsg as Message;
 
     (async () => {
-      // Messages FROM the content script (state updates, word boundaries)
+      // From content script
       if (sender.tab?.id) {
         if (msg.type === 'STATE_UPDATE') {
           globalState = { ...msg.state };
           activeTabId = sender.tab.id;
-          await broadcastStateToPopup(globalState);
           sendResponse({ success: true } satisfies MessageResponse);
           return;
         }
-
         if (msg.type === 'WORD_BOUNDARY') {
-          // Relay word boundary to popup
-          await broadcastStateToPopup(globalState);
           sendResponse({ success: true } satisfies MessageResponse);
           return;
         }
       }
 
-      // Messages FROM the popup — relay to active content script
       const tab = activeTabId
         ? await chrome.tabs.get(activeTabId).catch(() => null)
         : await getActiveTab();
@@ -74,17 +83,14 @@ chrome.runtime.onMessage.addListener(
       const tabId = tab.id;
 
       switch (msg.type) {
-        case 'GET_STATE': {
+        case 'GET_STATE':
           sendResponse({ success: true, state: globalState } satisfies MessageResponse);
           return;
-        }
 
-        case 'PLAY': {
+        case 'PLAY':
           activeTabId = tabId;
-          const res = await sendToContentScript(tabId, msg);
-          sendResponse(res);
+          sendResponse(await sendToTab(tabId, msg));
           return;
-        }
 
         case 'PAUSE':
         case 'RESUME':
@@ -93,56 +99,47 @@ chrome.runtime.onMessage.addListener(
         case 'SET_SPEED':
         case 'SET_PITCH':
         case 'SET_VOLUME':
-        case 'CLICK_TO_READ_TOGGLE': {
-          if (activeTabId === null) {
-            activeTabId = tabId;
-          }
-          const res = await sendToContentScript(activeTabId ?? tabId, msg);
-          sendResponse(res);
+        case 'CLICK_TO_READ_TOGGLE':
+          if (activeTabId === null) activeTabId = tabId;
+          sendResponse(await sendToTab(activeTabId ?? tabId, msg));
           return;
-        }
 
-        default: {
+        default:
           sendResponse({ success: false, error: 'Unknown message type' } satisfies MessageResponse);
-        }
       }
     })();
 
-    // Return true to keep the message channel open for async sendResponse
     return true;
   },
 );
 
-// ─── Keyboard Shortcuts ───────────────────────────────────────────────────────
+// ─── Keyboard shortcuts ───────────────────────────────────────────────────────
 
 chrome.commands.onCommand.addListener(async (command) => {
   const tab = activeTabId
     ? await chrome.tabs.get(activeTabId).catch(() => null)
     : await getActiveTab();
-
   if (!tab?.id) return;
-  const tabId = tab.id;
 
   switch (command) {
     case 'toggle-play': {
-      const msg: Message =
-        globalState.status === 'playing' ? { type: 'PAUSE' } : { type: 'RESUME' };
-      await sendToContentScript(tabId, msg);
+      const msg: Message = globalState.status === 'playing'
+        ? { type: 'PAUSE' }
+        : { type: 'RESUME' };
+      await sendToTab(tab.id, msg);
       break;
     }
-    case 'stop': {
-      await sendToContentScript(tabId, { type: 'STOP' });
+    case 'stop':
+      await sendToTab(tab.id, { type: 'STOP' });
       break;
-    }
-    case 'read-selection': {
-      activeTabId = tabId;
-      await sendToContentScript(tabId, { type: 'PLAY', mode: 'selection' });
+    case 'read-selection':
+      activeTabId = tab.id;
+      await sendToTab(tab.id, { type: 'READ_SELECTION' });
       break;
-    }
   }
 });
 
-// ─── Tab lifecycle cleanup ────────────────────────────────────────────────────
+// ─── Tab cleanup ──────────────────────────────────────────────────────────────
 
 chrome.tabs.onRemoved.addListener((tabId) => {
   if (tabId === activeTabId) {
@@ -152,9 +149,7 @@ chrome.tabs.onRemoved.addListener((tabId) => {
 });
 
 chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
-  // Page navigated — reset state for that tab
   if (tabId === activeTabId && changeInfo.status === 'loading') {
     globalState = { ...DEFAULT_STATE };
-    broadcastStateToPopup(globalState);
   }
 });

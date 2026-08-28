@@ -1,31 +1,104 @@
 /**
- * content.ts
- *
- * Entry point for the Spokn content script.
- * Injected into every page at document_idle.
- *
- * Responsibilities:
- *  - Listen for messages from the background service worker
- *  - Orchestrate textWalker → TTS → Highlighter → FloatingToolbar
- *  - Manage click-to-read mode
- *  - Report state back to background/popup
+ * content.ts — Spokn content script entry point.
+ * Injected at document_idle. Toggled via TOGGLE_TOOLBAR from background.
  */
 
 import type { Message, MessageResponse } from '../shared/messages.js';
 import type { PlaybackState } from '../shared/types.js';
 import { DEFAULT_STATE } from '../shared/types.js';
-import { walkPage, walkSelection } from './textWalker.js';
-import type { WalkResult } from './textWalker.js';
-import { TTS, getVoices } from './tts.js';
+import type { ToolbarState } from './floatingToolbar.js';
 import { FloatingToolbar } from './floatingToolbar.js';
+import { applyTheme, DEFAULT_THEME_ID } from './highlightTheme.js';
+import type { WalkResult } from './textWalker.js';
+import { walkPage, walkSelection } from './textWalker.js';
+import { getVoices, TTS } from './tts.js';
 
-// ─── State ────────────────────────────────────────────────────────────────────
+const LOG = import.meta.env.DEV ? (...args: unknown[]) => console.log('[Spokn]', ...args) : () => {};
+const ERR = (...args: unknown[]) => console.error('[Spokn]', ...args);
+
+// ─── Module state ─────────────────────────────────────────────────────────────
 
 let tts: TTS | null = null;
 let walkResult: WalkResult | null = null;
 let toolbar: FloatingToolbar | null = null;
 let clickToReadEnabled = false;
 let state: PlaybackState = { ...DEFAULT_STATE };
+let toolbarMounting = false;
+let currentTheme = DEFAULT_THEME_ID;
+
+// ─── Toolbar factory ──────────────────────────────────────────────────────────
+
+function buildToolbarState(): ToolbarState {
+  return {
+    status: state.status,
+    rate: state.rate,
+    pitch: state.pitch,
+    volume: state.volume,
+    voiceName: state.voiceName,
+    mode: state.mode,
+    currentSentence: state.currentSentence,
+    currentWord: state.currentWord,
+    wordIndex: state.wordIndex,
+    totalWords: state.totalWords,
+    highlightTheme: currentTheme,
+  };
+}
+
+function createToolbar(): FloatingToolbar {
+  LOG('createToolbar() — mode:', state.mode);
+  return new FloatingToolbar(
+    {
+      onPlay: (mode) => {
+        LOG('toolbar onPlay — mode:', mode);
+        if (mode === 'selection') {
+          startReading('selection').catch(e => ERR('startReading threw:', e));
+        } else {
+          // page mode — start from beginning of page
+          startReading('page').catch(e => ERR('startReading threw:', e));
+        }
+      },
+      onPause: () => { LOG('toolbar onPause'); tts?.pause(); },
+      onResume: () => { LOG('toolbar onResume'); tts?.resume(); },
+      onStop: () => {
+        LOG('toolbar onStop');
+        stopReading();
+      },
+      onVoiceChange: async (voiceName) => {
+        LOG('voiceChange:', voiceName);
+        state.voiceName = voiceName;
+        tts?.updateOptions({ voiceName });
+        await chrome.storage.sync.set({ voiceName });
+      },
+      onSpeedChange: async (rate) => {
+        state.rate = rate;
+        tts?.updateOptions({ rate });
+        await chrome.storage.sync.set({ rate });
+      },
+      onPitchChange: async (pitch) => {
+        state.pitch = pitch;
+        tts?.updateOptions({ pitch });
+        await chrome.storage.sync.set({ pitch });
+      },
+      onVolumeChange: async (volume) => {
+        state.volume = volume;
+        tts?.updateOptions({ volume });
+        await chrome.storage.sync.set({ volume });
+      },
+      onModeChange: async (mode) => {
+        LOG('modeChange:', mode);
+        state.mode = mode;
+        await chrome.storage.sync.set({ mode });
+      },
+      onThemeChange: async (themeId) => {
+        LOG('themeChange:', themeId);
+        currentTheme = themeId;
+        applyTheme(themeId);
+        await chrome.storage.sync.set({ highlightTheme: themeId });
+      },
+    },
+    buildToolbarState(),
+  );
+}
 
 // ─── State helpers ────────────────────────────────────────────────────────────
 
@@ -36,213 +109,248 @@ function broadcastState(): void {
 function setState(partial: Partial<PlaybackState>): void {
   state = { ...state, ...partial };
   broadcastState();
-  toolbar?.updateState({
-    status: state.status,
-    rate: state.rate,
-    currentSentence: state.currentSentence,
-    currentWord: state.currentWord,
-  });
+  toolbar?.updateState(buildToolbarState());
 }
 
 // ─── Playback ─────────────────────────────────────────────────────────────────
 
-async function startReading(mode: 'selection' | 'page' | 'click', fromElement?: Element): Promise<void> {
-  // Stop any existing session first
-  stopReading();
+async function startReading(
+  mode: 'selection' | 'page' | 'click',
+  fromElement?: Element,
+): Promise<void> {
+  LOG('startReading() — mode:', mode, fromElement ? 'from element' : '');
 
-  // Walk DOM to get word nodes
-  if (mode === 'selection') {
-    walkResult = walkSelection();
-  } else {
-    // 'page' or 'click'
-    if (fromElement) {
-      // For click-to-read: walk the clicked element and everything after it
-      walkResult = walkPageFrom(fromElement);
-    } else {
-      walkResult = walkPage();
-    }
+  // Clean up any previous session
+  if (tts) {
+    tts.stop();
+    tts = null;
   }
+  walkResult?.restore();
+  walkResult = null;
 
-  if (walkResult.words.length === 0) {
-    console.warn('[Spokn] No readable text found for mode:', mode);
+  // Walk DOM
+  try {
+    if (mode === 'selection') {
+      const sel = window.getSelection();
+      LOG('selection:', sel?.toString().slice(0, 60));
+      walkResult = walkSelection();
+    } else {
+      const all = walkPage();
+      LOG('walkPage words:', all.words.length);
+      walkResult = fromElement ? sliceFrom(all, fromElement) : all;
+    }
+  } catch (e) {
+    ERR('DOM walk failed:', e);
+    showToolbarError('Could not read page content. Try a different page.');
     return;
   }
 
-  // Load settings from storage
+  if (walkResult.words.length === 0) {
+    ERR('No readable words found for mode:', mode);
+    if (mode === 'selection') {
+      showToolbarError('No text selected. Highlight some text first.');
+    } else {
+      showToolbarError('No readable text found on this page.');
+    }
+    return;
+  }
+
+  LOG('words to speak:', walkResult.words.length, '— first:', walkResult.words[0]?.word);
+
+  // Check speechSynthesis is available
+  if (typeof speechSynthesis === 'undefined') {
+    ERR('speechSynthesis not available on this page');
+    showToolbarError('Speech not available on this page.');
+    return;
+  }
+
+  // Load persisted settings
   const stored = await chrome.storage.sync.get(['voiceName', 'rate', 'pitch', 'volume']);
-  const voiceName = (stored.voiceName as string) || '';
-  const rate = (stored.rate as number) ?? 1.0;
-  const pitch = (stored.pitch as number) ?? 1.0;
-  const volume = (stored.volume as number) ?? 1.0;
+  const voiceName = (stored.voiceName as string) || state.voiceName || '';
+  const rate     = (stored.rate   as number) ?? state.rate   ?? 1.0;
+  const pitch    = (stored.pitch  as number) ?? state.pitch  ?? 1.0;
+  const volume   = (stored.volume as number) ?? state.volume ?? 1.0;
+
+  LOG('TTS settings — voice:', voiceName || '(default)', 'rate:', rate, 'pitch:', pitch, 'vol:', volume);
 
   tts = new TTS({ voiceName, rate, pitch, volume });
 
-  // Mount floating toolbar
-  toolbar = new FloatingToolbar({
-    onPlayPause: () => {
-      if (state.status === 'playing') {
-        tts?.pause();
-      } else {
-        tts?.resume();
-      }
-    },
-    onStop: () => {
-      stopReading();
-    },
-  });
-  toolbar.mount();
-
-  // Subscribe to TTS events
   tts.on((event) => {
     switch (event.type) {
       case 'start':
+        LOG('TTS started');
         setState({
-          status: 'playing',
-          mode,
-          voiceName,
-          rate,
-          pitch,
-          volume,
+          status: 'playing', mode, voiceName, rate, pitch, volume,
           totalWords: walkResult?.words.length ?? 0,
         });
         break;
 
       case 'word': {
-        const wordIdx = event.wordIndex ?? 0;
+        const idx  = event.wordIndex ?? 0;
         const word = event.word ?? '';
-        const sentenceIdx = walkResult?.words[wordIdx]?.sentenceIndex ?? 0;
-
-        // Find current sentence text
-        const sentenceWords = walkResult?.words
-          .filter(w => w.sentenceIndex === sentenceIdx)
+        const sentIdx = walkResult?.words[idx]?.sentenceIndex ?? 0;
+        const sentence = walkResult?.words
+          .filter(w => w.sentenceIndex === sentIdx)
           .map(w => w.word)
           .join(' ') ?? '';
-
-        setState({
-          currentWord: word,
-          wordIndex: wordIdx,
-          currentSentence: sentenceWords,
-        });
-
-        // Relay word boundary to background
+        setState({ currentWord: word, wordIndex: idx, currentSentence: sentence });
         chrome.runtime.sendMessage({
-          type: 'WORD_BOUNDARY',
-          wordIndex: wordIdx,
-          word,
+          type: 'WORD_BOUNDARY', wordIndex: idx, word,
         } satisfies Message).catch(() => {});
         break;
       }
 
       case 'pause':
+        LOG('TTS paused');
         setState({ status: 'paused' });
         break;
 
       case 'resume':
+        LOG('TTS resumed');
         setState({ status: 'playing' });
         break;
 
       case 'stop':
       case 'end':
+        LOG('TTS', event.type);
         setState({ status: 'stopped', currentWord: '', wordIndex: 0, currentSentence: '' });
-        toolbar?.unmount();
-        toolbar = null;
         walkResult?.restore();
         walkResult = null;
+        tts = null;
         break;
     }
   });
 
-  await tts.play(walkResult.words);
+  try {
+    await tts.play(walkResult.words);
+  } catch (e) {
+    ERR('tts.play() threw:', e);
+    showToolbarError('Playback failed. Check console for details.');
+  }
 }
 
 function stopReading(): void {
+  LOG('stopReading()');
   tts?.stop();
   tts = null;
   walkResult?.restore();
   walkResult = null;
-  toolbar?.unmount();
-  toolbar = null;
-  state = { ...DEFAULT_STATE };
-  broadcastState();
-}
-
-/**
- * Walk page starting from a given element — used for click-to-read mode.
- * Collects text from the clicked element and all following siblings/ancestors.
- */
-function walkPageFrom(fromElement: Element): WalkResult {
-  // Mark all elements before fromElement as inert temporarily,
-  // walk, then restore — simpler: just walk the element itself onward
-  // We'll collect by walking the element and all its following elements.
-  const allResult = walkPage();
-
-  // Filter words to only those at or after fromElement in DOM order
-  const idx = allResult.words.findIndex(w => fromElement.contains(w.span) || fromElement === w.span.closest('[data-spokn-root]'));
-  if (idx <= 0) return allResult;
-
-  // Words before the clicked element get restored immediately
-  const before = allResult.words.slice(0, idx);
-  before.forEach(w => {
-    const parent = w.span.parentNode;
-    if (!parent) return;
-    const text = document.createTextNode(w.word);
-    parent.replaceChild(text, w.span);
-  });
-
-  return {
-    words: allResult.words.slice(idx),
-    fullText: allResult.words.slice(idx).map(w => w.word).join(' '),
-    charOffsets: allResult.charOffsets.slice(idx).map(o => o - (allResult.charOffsets[idx] ?? 0)),
-    restore: allResult.restore,
+  state = {
+    ...DEFAULT_STATE,
+    voiceName: state.voiceName,
+    rate:   state.rate,
+    pitch:  state.pitch,
+    volume: state.volume,
+    mode:   state.mode,
   };
+  broadcastState();
+  toolbar?.updateState(buildToolbarState());
 }
 
-// ─── Click-to-read mode ───────────────────────────────────────────────────────
-
-const CLICKABLE_TAGS = new Set(['P', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6', 'LI', 'BLOCKQUOTE', 'TD', 'TH', 'ARTICLE', 'SECTION', 'MAIN', 'DIV']);
-
-function enableClickToRead(): void {
-  clickToReadEnabled = true;
-  document.addEventListener('mouseover', onClickToReadHover);
-  document.addEventListener('mouseout', onClickToReadOut);
-  document.addEventListener('click', onClickToReadClick, true);
-}
-
-function disableClickToRead(): void {
-  clickToReadEnabled = false;
-  document.removeEventListener('mouseover', onClickToReadHover);
-  document.removeEventListener('mouseout', onClickToReadOut);
-  document.removeEventListener('click', onClickToReadClick, true);
-  // Clean up any leftover hover classes
-  document.querySelectorAll('.spokn-clickable-hover').forEach(el => {
-    el.classList.remove('spokn-clickable-hover');
-  });
-}
-
-function onClickToReadHover(e: MouseEvent): void {
-  const target = e.target as Element;
-  if (CLICKABLE_TAGS.has(target.tagName)) {
-    target.classList.add('spokn-clickable-hover');
+/** Show a transient error message in the toolbar preview area. */
+function showToolbarError(msg: string): void {
+  ERR('UI error:', msg);
+  if (!toolbar?.isVisible()) return;
+  const preview = toolbar['shadow']?.getElementById('spokn-preview') as HTMLElement | null;
+  if (preview) {
+    preview.textContent = '⚠ ' + msg;
+    preview.style.color = '#f87171';
+    setTimeout(() => {
+      if (preview) {
+        preview.textContent = 'Ready';
+        preview.style.color = '';
+      }
+    }, 4000);
   }
 }
 
-function onClickToReadOut(e: MouseEvent): void {
-  const target = e.target as Element;
-  target.classList.remove('spokn-clickable-hover');
+/** Slice a WalkResult to only words at/after a given element. */
+function sliceFrom(all: WalkResult, from: Element): WalkResult {
+  const idx = all.words.findIndex(w => from.contains(w.span));
+  if (idx <= 0) return all;
+  all.words.slice(0, idx).forEach(w => {
+    const parent = w.span.parentNode;
+    if (!parent) return;
+    parent.replaceChild(document.createTextNode(w.word), w.span);
+  });
+  const offsetBase = all.charOffsets[idx] ?? 0;
+  return {
+    words: all.words.slice(idx),
+    fullText: all.words.slice(idx).map(w => w.word).join(' '),
+    charOffsets: all.charOffsets.slice(idx).map(o => o - offsetBase),
+    restore: all.restore,
+  };
 }
 
-function onClickToReadClick(e: MouseEvent): void {
-  const target = e.target as Element;
-  const readable = target.closest(Array.from(CLICKABLE_TAGS).join(','));
-  if (!readable) return;
+// ─── Click-to-read ────────────────────────────────────────────────────────────
 
-  // Don't intercept clicks on Spokn toolbar
-  if ((e.target as Element).closest('#spokn-toolbar-host')) return;
+const CLICKABLE = 'p,h1,h2,h3,h4,h5,h6,li,blockquote,td,th,article,section,main';
+
+function enableClickToRead(): void {
+  if (clickToReadEnabled) return;
+  clickToReadEnabled = true;
+  document.addEventListener('mouseover', onHover);
+  document.addEventListener('mouseout', onHoverOut);
+  document.addEventListener('click', onClickRead, true);
+}
+
+function disableClickToRead(): void {
+  if (!clickToReadEnabled) return;
+  clickToReadEnabled = false;
+  document.removeEventListener('mouseover', onHover);
+  document.removeEventListener('mouseout', onHoverOut);
+  document.removeEventListener('click', onClickRead, true);
+  document.querySelectorAll('.spokn-clickable-hover')
+    .forEach(el => el.classList.remove('spokn-clickable-hover'));
+}
+
+function onHover(e: MouseEvent): void {
+  (e.target as Element).closest(CLICKABLE)?.classList.add('spokn-clickable-hover');
+}
+function onHoverOut(e: MouseEvent): void {
+  (e.target as Element).classList.remove('spokn-clickable-hover');
+}
+function onClickRead(e: MouseEvent): void {
+  if ((e.target as Element).closest('#spokn-host')) return;
+  const el = (e.target as Element).closest(CLICKABLE);
+  if (!el) return;
+
+  // Only intercept if toolbar is open and mode is not 'selection'
+  if (!toolbar?.isVisible() || state.mode === 'selection') return;
 
   e.preventDefault();
   e.stopPropagation();
-  readable.classList.remove('spokn-clickable-hover');
-  startReading('click', readable);
+  (el as Element).classList.remove('spokn-clickable-hover');
+  startReading('page', el as Element).catch(ex => ERR('click-to-read threw:', ex));
+}
+
+// ─── Toolbar toggle ───────────────────────────────────────────────────────────
+
+function toggleToolbar(): void {
+  LOG('toggleToolbar() — visible:', toolbar?.isVisible(), 'mounting:', toolbarMounting);
+  if (toolbarMounting) return;
+
+  if (toolbar?.isVisible()) {
+    stopReading();
+    disableClickToRead();
+    toolbar.unmount();
+    toolbar = null;
+    return;
+  }
+
+  toolbarMounting = true;
+  try {
+    toolbar = createToolbar();
+    toolbar.mount();
+    // Always enable click-to-read when toolbar is open —
+    // clicking any paragraph starts/jumps reading from that point
+    enableClickToRead();
+    LOG('toolbar mounted');
+  } catch (e) {
+    ERR('toolbar mount failed:', e);
+  } finally {
+    toolbarMounting = false;
+  }
 }
 
 // ─── Message listener ─────────────────────────────────────────────────────────
@@ -250,116 +358,150 @@ function onClickToReadClick(e: MouseEvent): void {
 chrome.runtime.onMessage.addListener(
   (rawMsg: unknown, _sender, sendResponse) => {
     const msg = rawMsg as Message;
+    LOG('message received:', msg.type);
 
     (async () => {
       try {
         switch (msg.type) {
+
+          case 'TOGGLE_TOOLBAR':
+            // Only the top-level frame mounts the toolbar
+            if (window.self === window.top) {
+              toggleToolbar();
+            }
+            sendResponse({ success: true } satisfies MessageResponse);
+            break;
+
+          case 'READ_SELECTION': {
+            // Only handle in top frame or the frame that has the selection
+            const sel = window.getSelection();
+            const hasSelection = sel && !sel.isCollapsed && sel.toString().trim().length > 0;
+            if (window.self !== window.top && !hasSelection) {
+              sendResponse({ success: true } satisfies MessageResponse);
+              break;
+            }
+            if (!toolbar?.isVisible() && window.self === window.top) {
+              toolbar = createToolbar();
+              toolbar.mount();
+            }
+            state.mode = 'selection';
+            toolbar?.updateState(buildToolbarState());
+            await startReading('selection');
+            sendResponse({ success: true } satisfies MessageResponse);
+            break;
+          }
+
           case 'PLAY': {
-            const mode = msg.mode;
-            if (mode === 'click') {
-              enableClickToRead();
-              setState({ mode: 'click', status: 'stopped' });
-            } else {
-              await startReading(mode);
+            if (window.self === window.top) {
+              if (!toolbar?.isVisible()) {
+                toolbar = createToolbar();
+                toolbar.mount();
+                enableClickToRead();
+              }
+              await startReading(msg.mode === 'click' ? 'page' : msg.mode);
             }
             sendResponse({ success: true } satisfies MessageResponse);
             break;
           }
 
-          case 'PAUSE': {
-            if (tts && state.status === 'playing') {
-              tts.pause();
-            }
+          case 'PAUSE':
+            if (tts && state.status === 'playing') tts.pause();
             sendResponse({ success: true } satisfies MessageResponse);
             break;
-          }
 
-          case 'RESUME': {
-            if (tts && state.status === 'paused') {
-              tts.resume();
-            }
+          case 'RESUME':
+            if (tts && state.status === 'paused') tts.resume();
             sendResponse({ success: true } satisfies MessageResponse);
             break;
-          }
 
-          case 'STOP': {
+          case 'STOP':
             stopReading();
             disableClickToRead();
             sendResponse({ success: true } satisfies MessageResponse);
             break;
-          }
 
-          case 'SET_VOICE': {
+          case 'SET_VOICE':
             state.voiceName = msg.voiceName;
             tts?.updateOptions({ voiceName: msg.voiceName });
             await chrome.storage.sync.set({ voiceName: msg.voiceName });
             sendResponse({ success: true } satisfies MessageResponse);
             break;
-          }
 
-          case 'SET_SPEED': {
+          case 'SET_SPEED':
             state.rate = msg.rate;
             tts?.updateOptions({ rate: msg.rate });
-            toolbar?.updateState({ status: state.status, rate: msg.rate, currentSentence: state.currentSentence, currentWord: state.currentWord });
+            toolbar?.updateState(buildToolbarState());
             await chrome.storage.sync.set({ rate: msg.rate });
             sendResponse({ success: true } satisfies MessageResponse);
             break;
-          }
 
-          case 'SET_PITCH': {
+          case 'SET_PITCH':
             state.pitch = msg.pitch;
             tts?.updateOptions({ pitch: msg.pitch });
             await chrome.storage.sync.set({ pitch: msg.pitch });
             sendResponse({ success: true } satisfies MessageResponse);
             break;
-          }
 
-          case 'SET_VOLUME': {
+          case 'SET_VOLUME':
             state.volume = msg.volume;
             tts?.updateOptions({ volume: msg.volume });
             await chrome.storage.sync.set({ volume: msg.volume });
             sendResponse({ success: true } satisfies MessageResponse);
             break;
-          }
 
-          case 'GET_STATE': {
+          case 'GET_STATE':
             sendResponse({ success: true, state } satisfies MessageResponse);
             break;
-          }
 
-          case 'CLICK_TO_READ_TOGGLE': {
-            if (msg.enabled) {
-              enableClickToRead();
-            } else {
-              disableClickToRead();
-            }
+          case 'CLICK_TO_READ_TOGGLE':
+            msg.enabled ? enableClickToRead() : disableClickToRead();
             sendResponse({ success: true } satisfies MessageResponse);
             break;
-          }
 
           default:
             sendResponse({ success: false, error: 'Unknown message' } satisfies MessageResponse);
         }
       } catch (err) {
+        ERR('message handler threw for', (msg as Message).type, ':', err);
         sendResponse({ success: false, error: String(err) } satisfies MessageResponse);
       }
     })();
 
-    return true; // keep channel open for async response
+    return true;
   },
 );
 
 // ─── Init ─────────────────────────────────────────────────────────────────────
 
-// Pre-warm voices so they're ready when the user opens the popup
-getVoices().then(voices => {
-  if (voices.length > 0 && !state.voiceName) {
-    // Try to pick a sensible default: English, non-remote
-    const preferred = voices.find(v => v.lang.startsWith('en') && !v.name.includes('Google'));
-    if (preferred) {
-      state.voiceName = preferred.name;
+(async () => {
+  try {
+    const stored = await chrome.storage.sync.get(['voiceName', 'rate', 'pitch', 'volume', 'mode', 'highlightTheme']);
+    if (stored.voiceName) state.voiceName = stored.voiceName as string;
+    if (stored.rate   != null) state.rate   = stored.rate   as number;
+    if (stored.pitch  != null) state.pitch  = stored.pitch  as number;
+    if (stored.volume != null) state.volume = stored.volume as number;
+    if (stored.mode)           state.mode   = stored.mode   as typeof state.mode;
+    if (stored.highlightTheme) {
+      currentTheme = stored.highlightTheme as string;
+      applyTheme(currentTheme);
+    } else {
+      applyTheme(DEFAULT_THEME_ID);
     }
-  }
-});
 
-console.debug('[Spokn] Content script loaded on', location.hostname);
+    const voices = await getVoices();
+    LOG('voices loaded:', voices.length);
+    if (voices.length > 0 && !state.voiceName) {
+      const preferred = voices.find(v => v.lang.startsWith('en') && v.localService)
+        ?? voices.find(v => v.lang.startsWith('en'))
+        ?? voices[0];
+      if (preferred) {
+        state.voiceName = preferred.name;
+        LOG('auto-selected voice:', preferred.name);
+      }
+    }
+  } catch (e) {
+    ERR('init failed:', e);
+  }
+})();
+
+LOG('Content script ready on', location.hostname);

@@ -28,12 +28,12 @@ export const DEFAULT_SETTINGS: SpoknSettings = {
   rate: 1.0,
   pitch: 1.0,
   volume: 1.0,
-  mode: 'selection',
+  mode: 'page',
 };
 
 export const DEFAULT_STATE: PlaybackState = {
   status: 'stopped',
-  mode: 'selection',
+  mode: 'page',
   voiceName: '',
   rate: 1.0,
   pitch: 1.0,

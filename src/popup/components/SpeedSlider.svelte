@@ -86,8 +86,8 @@
   .value-badge {
     font-size: 12px;
     font-weight: 700;
-    color: #7c3aed;
-    background: rgba(124, 58, 237, 0.15);
+    color: #0ea5e9;
+    background: rgba(14, 165, 233, 0.15);
     padding: 2px 8px;
     border-radius: 20px;
   }
@@ -102,8 +102,8 @@
     cursor: pointer;
     background: linear-gradient(
       to right,
-      #7c3aed 0%,
-      #7c3aed var(--fill),
+      #0ea5e9 0%,
+      #0ea5e9 var(--fill),
       rgba(255,255,255,0.12) var(--fill),
       rgba(255,255,255,0.12) 100%
     );
@@ -114,7 +114,7 @@
     width: 16px;
     height: 16px;
     border-radius: 50%;
-    background: #7c3aed;
+    background: #0ea5e9;
     border: 2px solid #f1f5f9;
     box-shadow: 0 1px 4px rgba(0,0,0,0.4);
     transition: transform 0.1s, box-shadow 0.1s;
@@ -122,7 +122,7 @@
 
   input[type='range']::-webkit-slider-thumb:hover {
     transform: scale(1.2);
-    box-shadow: 0 0 0 4px rgba(124,58,237,0.3);
+    box-shadow: 0 0 0 4px rgba(14,165,233,0.3);
   }
 
   input[type='range']::-webkit-slider-thumb:active {
@@ -148,13 +148,13 @@
   }
 
   .preset-btn:hover {
-    border-color: #7c3aed;
+    border-color: #0ea5e9;
     color: #f1f5f9;
   }
 
   .preset-btn.active {
-    background: #7c3aed;
-    border-color: #7c3aed;
+    background: #0ea5e9;
+    border-color: #0ea5e9;
     color: #fff;
     font-weight: 600;
   }
