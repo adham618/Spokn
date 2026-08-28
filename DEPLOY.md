@@ -146,7 +146,7 @@ https://ko-fi.com/yourname
    - Add the name, short description, and detailed description above
    - Upload screenshots (at least 1)
    - Upload promo tiles (440×280 required)
-   - Select category: **Productivity**
+   - Select category: **Tools** (under the Productivity section)
    - Select language: English
 
 2. **Privacy practices** tab:
