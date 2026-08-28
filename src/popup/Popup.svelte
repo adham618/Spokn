@@ -230,7 +230,8 @@
       class="kofi-btn"
       aria-label="Support {import.meta.env.VITE_APP_NAME} on Ko-fi"
     >
-      ☕ Support development
+      <img src="/kofi.png" alt="" width="20" height="20" aria-hidden="true" />
+      Support me on Ko-fi
     </a>
     <span class="version">v{import.meta.env.VITE_APP_VERSION}</span>
   </footer>
@@ -402,21 +403,24 @@
   .kofi-btn {
     display: inline-flex;
     align-items: center;
-    gap: 5px;
-    font-size: 11px;
-    color: #94a3b8;
+    gap: 8px;
+    font-size: 12px;
+    font-weight: 600;
+    color: #000;
     text-decoration: none;
-    padding: 5px 10px;
+    padding: 8px 16px;
     border-radius: 20px;
-    border: 1px solid rgba(255,255,255,0.08);
+    border: none;
     transition: all 0.15s;
-    background: transparent;
+    background: #72A4F2;
+    box-shadow: 0 2px 8px rgba(255, 153, 0, 0.35);
   }
 
   .kofi-btn:hover {
-    color: #f1f5f9;
-    border-color: rgba(255, 160, 0, 0.4);
-    background: rgba(255, 160, 0, 0.08);
+    background: #ffb733;
+    color: #1a1a1a;
+    box-shadow: 0 4px 14px rgba(255, 153, 0, 0.5);
+    transform: translateY(-1px);
   }
 
   .version {

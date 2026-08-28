@@ -1019,24 +1019,22 @@
       #spokn-kofi-btn {
         display: inline-flex;
         align-items: center;
-        gap: 10px;
+        gap: 6px;
         font-size: 13px;
         font-weight: 700;
-        color: #000;
+        color: #202020;
         text-decoration: none;
-        padding: 9px 16px;
-        border-radius: 10px;
-        background: "#72A4F2";
+        padding: 7px 16px;
+        border-radius: 12px;
+        background: #72A4F2;
         border: none;
         transition: filter 0.15s, transform 0.1s;
         letter-spacing: 0.01em;
-        width: 100%;
-        justify-content: center;
       }
       #spokn-kofi-btn:hover { filter: brightness(1.12); transform: translateY(-1px); }
       #spokn-kofi-btn:active { transform: translateY(0); filter: brightness(0.95); }
       #spokn-kofi-logo { width: 24px; height: 24px; flex-shrink: 0; object-fit: contain; }
-      #spokn-version { text-align: center; font-size: 10px; color: "#72A4F2"; margin-top: 0px; }
+      #spokn-version { text-align: center; font-size: 10px; color: #72A4F2; margin-top: 0px; }
     `;
     }
   }
