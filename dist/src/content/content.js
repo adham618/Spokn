@@ -268,7 +268,7 @@
               <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
             </span>
             <a id="spokn-voice-help-link" class="voice-hint-link" href="#" target="_blank" rel="noopener noreferrer">
-              How to add more voices
+              How to add more voices?
             </a>
           </div>
 
@@ -378,6 +378,8 @@
               title="${isPlaying ? "Pause" : "Play"}">
               ${isPlaying ? ICONS.pause : ICONS.play}
             </button>
+
+            <div id="spokn-settings-divider"></div>
 
             <button id="spokn-settings-toggle"
               class="btn${this.settingsOpen ? " btn-active" : ""}"
@@ -655,8 +657,8 @@
 
       /* ── Pill ────────────────────────────────────────────────────────────── */
       #spokn-pill {
-        background: rgba(30,30,30,0.75);
-        border-radius: 12px;
+        background: #1B1C1F;
+        border-radius: 999px;
         border: 1px solid rgba(255,255,255,0.08);
         box-shadow: 0 2px 12px rgba(0,0,0,0.2);
         font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
@@ -668,7 +670,7 @@
       }
       #spokn-pill-wrap:hover #spokn-pill,
       #spokn-pill.settings-open {
-        background: #1e1e1e;
+        background: #1B1C1F;
         box-shadow: 0 2px 12px rgba(0,0,0,0.3);
       }
 
@@ -700,11 +702,11 @@
         flex-direction: column;
         align-items: center;
         gap: 6px;
-        padding: 5px 10px 2px;
+        padding: 17px 7px 11px;
       }
 
       #spokn-drag {
-        color: #fff;
+        color: #BAB9BA;
         cursor: grab;
         padding: 4px;
         flex-shrink: 0;
@@ -714,8 +716,19 @@
         transition: color 0.12s;
         margin-bottom: 4px;
       }
-      #spokn-drag:hover  { color: #fff; }
+      #spokn-drag:hover  { color: #BAB9BA; }
       #spokn-drag:active { cursor: grabbing; }
+
+      #spokn-settings-toggle {
+        color: #BAB9BA;
+      }
+      #spokn-settings-toggle:hover { color: #BAB9BA; }
+      #spokn-settings-divider {
+        width: 24px;
+        height: 1px;
+        background: #28292C;
+        margin: 4px auto 0;
+      }
 
       /* ── Buttons ─────────────────────────────────────────────────────────── */
       .btn {
@@ -744,15 +757,15 @@
       }
       .btn-play:hover { background: var(--accent); filter: brightness(1.15); }
 
-      .btn-active { background: var(--accent-dim); color: var(--accent); }
-      .btn-active:hover { background: rgba(2,119,212,0.28); color: #7eb3ff; }
+      .btn-active { background: var(--surface-hv); color: #BAB9BA; }
+      .btn-active:hover { background: var(--surface-hv); color: #BAB9BA; }
 
       /* ── Settings panel ──────────────────────────────────────────────────── */
       #spokn-settings {
         display: none;
         flex-direction: column;
         gap: 0;
-        background: #1e1e1e;
+        background: #1B1C1F;
         border: 1px solid rgba(255,255,255,0.08);
         border-radius: 16px;
         box-shadow: 0 2px 12px rgba(0,0,0,0.3);
