@@ -18,17 +18,33 @@ export class Highlighter {
   private currentWordIdx = -1;
   private currentSentenceIdx = -1;
 
-  // Suppress auto-scroll for a few seconds after the user manually scrolls
+  // Suppress auto-scroll for a few seconds after the user manually scrolls.
+  // We use a flag + timestamp to distinguish user-initiated scrolls from the
+  // programmatic scrollIntoView calls we make ourselves.
   private userScrolledAt = 0;
-  private readonly USER_SCROLL_SUPPRESS_MS = 5000;
+  private readonly USER_SCROLL_SUPPRESS_MS = 3000;
+  // Set to true while we are programmatically scrolling so the scroll listener
+  // doesn't mistake our own scroll for a user scroll.
+  private isProgrammaticScroll = false;
   private scrollListener: (() => void) | null = null;
 
   constructor(words: WordNode[]) {
     this.words = words;
     this.scrollListener = () => {
+      if (this.isProgrammaticScroll) return;
       this.userScrolledAt = Date.now();
     };
     window.addEventListener('scroll', this.scrollListener, { passive: true, capture: true });
+  }
+
+  /**
+   * Scroll to the word at `wordIdx` without changing the highlight state.
+   * Used when a new chunk starts speaking so the page scrolls before the
+   * first boundary event arrives.
+   */
+  scrollToWord(wordIdx: number): void {
+    if (wordIdx < 0 || wordIdx >= this.words.length) return;
+    this.scrollIntoView(this.words[wordIdx]!.span);
   }
 
   /**
@@ -104,19 +120,20 @@ export class Highlighter {
 
   private scrollIntoView(el: HTMLElement): void {
     try {
-      // Don't scroll if the user has manually scrolled recently
-      if (Date.now() - this.userScrolledAt < this.USER_SCROLL_SUPPRESS_MS) return;
+      const timeSinceUserScroll = Date.now() - this.userScrolledAt;
+      if (timeSinceUserScroll < this.USER_SCROLL_SUPPRESS_MS) return;
 
-      // Don't scroll if the element is already fully visible in the viewport
       const rect = el.getBoundingClientRect();
-      const inView =
-        rect.top >= 0 &&
-        rect.bottom <= (window.innerHeight || document.documentElement.clientHeight);
+      const vh = window.innerHeight || document.documentElement.clientHeight;
+      const inView = rect.top >= 50 && rect.bottom <= vh - 150;
+
       if (inView) return;
 
+      this.isProgrammaticScroll = true;
       el.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'nearest' });
+      setTimeout(() => { this.isProgrammaticScroll = false; }, 1000);
     } catch {
-      // scrollIntoView can throw in some browser contexts — fail silently
+      this.isProgrammaticScroll = false;
     }
   }
 }

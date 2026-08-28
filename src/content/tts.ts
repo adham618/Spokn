@@ -287,6 +287,11 @@ export class TTS {
     utter.onstart = () => {
       this.lastBoundaryTime = Date.now();
       this.startWatchdog(index, text);
+      // Scroll to the first word of this chunk before any boundary event fires.
+      // This ensures the page follows along when advancing to the next chunk.
+      if (index > 0) {
+        this.highlighter?.scrollToWord(chunk.globalOffset);
+      }
       this.emit({
         type: 'start',
         chunkIndex: index,
