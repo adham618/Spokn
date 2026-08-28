@@ -112,15 +112,17 @@
     }
   `;
   }
-  const SVG_ATTRS = `xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"`;
+  function removeTheme() {
+    document.getElementById(STYLE_ID)?.remove();
+  }
+  const SVG_ATTRS = `xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"`;
   const ICONS = {
-    play: `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" aria-hidden="true" viewBox="0.89 0.89 14.17 14.23"><path fill="currentColor" d="M 8,0.88671875 C 4.0832548,0.88671875 0.88671875,4.0832548 0.88671875,8 C 0.88671881,11.916745 4.0832548,15.113281 8,15.113281 c 1.9370568,0 3.674673,-0.793691 4.941406,-2.064453 v -0.002 c 0.177377,-0.175751 0.343653,-0.361313 0.501953,-0.554687 c 0.01459,-0.01807 0.02855,-0.03648 0.04297,-0.05469 c 0.16478,-0.205303 0.315402,-0.421643 0.457031,-0.644531 c 0.0067,-0.01075 0.0148,-0.02046 0.02149,-0.03125 v -0.0039 C 14.650217,10.665341 15.054688,9.3797667 15.054688,8 c 0,-1.3797667 -0.404471,-2.6653405 -1.089844,-3.7578125 v -0.00391 c -0.0067,-0.010785 -0.01475,-0.020503 -0.02149,-0.03125 C 13.80173,3.9841434 13.651108,3.7678028 13.486328,3.5625 C 13.471912,3.5442884 13.457947,3.5258787 13.443359,3.5078125 C 13.285059,3.314438 13.118783,3.128876 12.941406,2.953125 C 11.674593,1.6817746 9.9375455,0.88671878 8,0.88671875 Z M 6.9414062,5.4003906 a 1.0001,1.0001 0 0 1 0.00977,0 a 1.0001,1.0001 0 0 1 0.5625,0.1425782 l 2.6679691,1.5996093 a 1.0001,1.0001 0 0 1 0,1.7148438 L 7.5136719,10.457031 A 1.0001,1.0001 0 0 1 6,9.5996094 V 6.4003906 a 1.0001,1.0001 0 0 1 0.9414062,-1 Z"/></svg>`,
-    pause: `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" aria-hidden="true" viewBox="1.59 1.07 5.29 6.35"><g transform="translate(-110.41692,-114.44801)"><path fill="currentColor" d="M 115.97265 115.51358 C 115.53748 115.51358 115.17994 115.87165 115.17994 116.30681 L 115.17994 121.07034 C 115.17994 121.5055 115.53748 121.86306 115.97265 121.86306 L 116.50182 121.86306 C 116.93699 121.86306 117.29711 121.5055 117.29712 121.07034 L 117.29712 116.30681 C 117.29712 115.87165 116.93699 115.51358 116.50182 115.51358 L 115.97265 115.51358 Z" stroke="none"/><path fill="currentColor" d="M 112.79869 115.51358 C 112.36353 115.51358 112.0039 115.87165 112.0039 116.30681 L 112.0039 121.07034 C 112.0039 121.5055 112.36353 121.86306 112.79869 121.86306 L 113.32837 121.86306 C 113.76353 121.86306 114.12109 121.5055 114.12109 121.07034 L 114.12109 116.30681 C 114.12109 115.87165 113.76353 115.51358 113.32837 115.51358 L 112.79869 115.51358 Z" stroke="none"/></g></svg>`,
-    stop: `<svg ${SVG_ATTRS}><rect x="3" y="3" width="18" height="18" rx="2"/></svg>`,
-    settings: `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 15.5A3.5 3.5 0 0 1 8.5 12 3.5 3.5 0 0 1 12 8.5a3.5 3.5 0 0 1 3.5 3.5 3.5 3.5 0 0 1-3.5 3.5m7.43-2.92c.04-.34.07-.68.07-1.08s-.03-.73-.07-1.08l2.32-1.81c.21-.16.27-.46.13-.7l-2.2-3.81c-.14-.24-.42-.32-.66-.24l-2.74 1.11c-.57-.44-1.18-.81-1.86-1.08L14.99 2.42C14.96 2.18 14.75 2 14.5 2h-4.4c-.25 0-.46.18-.49.42l-.38 2.47c-.68.27-1.3.64-1.86 1.08L4.63 4.86c-.24-.09-.52 0-.66.24L1.77 8.91c-.14.24-.08.54.13.7L4.22 11.42c-.04.35-.07.69-.07 1.08s.03.73.07 1.08l-2.32 1.81c-.21.16-.27.46-.13.7l2.2 3.81c.14.24.42.32.66.24l2.74-1.11c.57.44 1.18.81 1.86 1.08l.38 2.47c.03.24.24.42.49.42h4.4c.25 0 .46-.18.49-.42l.38-2.47c.68-.27 1.3-.64 1.86-1.08l2.74 1.11c.24.09.52 0 .66-.24l2.2-3.81c.14-.24.08-.54-.13-.7l-2.32-1.81Z"/></svg>`,
-    close: `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" aria-hidden="true" viewBox="7.67 7.67 16.66 16.66"><path fill="currentColor" d="M23.879 21.22l-5.224-5.221 5.22-5.224c0.602-0.6 0.602-1.565 0.002-2.167l-0.485-0.486c-0.285-0.292-0.675-0.451-1.085-0.451-0.002 0-0.002 0-0.002 0-0.41 0-0.795 0.161-1.083 0.45l-5.222 5.226-5.224-5.22c-0.599-0.6-1.563-0.603-2.165-0.003l-0.486 0.481c-0.293 0.287-0.453 0.677-0.453 1.086 0 0.411 0.161 0.798 0.45 1.086l5.226 5.222-5.221 5.224c-0.602 0.6-0.602 1.565-0.002 2.169l0.485 0.485c0.287 0.292 0.676 0.451 1.086 0.451 0.408 0 0.798-0.163 1.085-0.45l5.221-5.225 5.222 5.219c0.296 0.299 0.69 0.45 1.085 0.45 0.391 0 0.783-0.149 1.082-0.447l0.485-0.484c0.294-0.285 0.453-0.675 0.453-1.085 0.002-0.41-0.159-0.797-0.448-1.086z"/></svg>`,
-    grip: `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="9" cy="6" r="1.5"/><circle cx="15" cy="6" r="1.5"/><circle cx="9" cy="12" r="1.5"/><circle cx="15" cy="12" r="1.5"/><circle cx="9" cy="18" r="1.5"/><circle cx="15" cy="18" r="1.5"/></svg>`,
-    chevron: `<svg  ${SVG_ATTRS} xmlns="http://www.w3.org/2000/svg" width="16" height="16" aria-hidden="true" viewBox="19.65 32.2 60.55 36.15"><path fill="currentColor" d="M21.364,42.218l24.329,24.329c0.026,0.027,0.034,0.065,0.061,0.091c1.146,1.146,2.659,1.715,4.17,1.711c1.511,0.004,3.023-0.564,4.17-1.711c0.027-0.027,0.034-0.064,0.061-0.091l24.329-24.329c2.285-2.285,2.285-6.024,0-8.308s-6.024-2.285-8.308,0L49.923,54.161L29.672,33.91c-2.285-2.285-6.024-2.285-8.308,0S19.079,39.934,21.364,42.218z"/></svg>`,
+    play: `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="8 4.5 11.75 15" aria-hidden="true" style="transform:translateX(2px)"><path d="M8 5.5v13a1 1 0 0 0 1.53.85l9.75-6.5a1 1 0 0 0 0-1.7l-9.75-6.5A1 1 0 0 0 8 5.5Z"/></svg>`,
+    pause: `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="4.5 0 27 36" aria-hidden="true"><path d="M9,0A4.50022,4.50022,0,0,0,4.5,4.5v27a4.5,4.5,0,0,0,9,0V4.5A4.50022,4.50022,0,0,0,9,0Z"/><path d="M27,0a4.50022,4.50022,0,0,0-4.5,4.5v27a4.5,4.5,0,0,0,9,0V4.5A4.50022,4.50022,0,0,0,27,0Z"/></svg>`,
+    settings: `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 15.5A3.5 3.5 0 0 1 8.5 12 3.5 3.5 0 0 1 12 8.5a3.5 3.5 0 0 1 3.5 3.5 3.5 3.5 0 0 1-3.5 3.5m7.43-2.92c.04-.34.07-.68.07-1.08s-.03-.73-.07-1.08l2.32-1.81c.21-.16.27-.46.13-.7l-2.2-3.81c-.14-.24-.42-.32-.66-.24l-2.74 1.11c-.57-.44-1.18-.81-1.86-1.08L14.99 2.42C14.96 2.18 14.75 2 14.5 2h-4.4c-.25 0-.46.18-.49.42l-.38 2.47c-.68.27-1.3.64-1.86 1.08L4.63 4.86c-.24-.09-.52 0-.66.24L1.77 8.91c-.14.24-.08.54.13.7L4.22 11.42c-.04.35-.07.69-.07 1.08s.03.73.07 1.08l-2.32 1.81c-.21.16-.27.46-.13.7l2.2 3.81c.14.24.42.32.66.24l2.74-1.11c.57.44 1.18.81 1.86 1.08l.38 2.47c.03.24.24.42.49.42h4.4c.25 0 .46-.18.49-.42l.38-2.47c.68-.27 1.3-.64 1.86-1.08l2.74 1.11c.24.09.52 0 .66-.24l2.2-3.81c.14-.24.08-.54-.13-.7l-2.32-1.81Z"/></svg>`,
+    close: `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" aria-hidden="true" viewBox="7.67 7.67 16.66 16.66"><path fill="currentColor" d="M23.879 21.22l-5.224-5.221 5.22-5.224c0.602-0.6 0.602-1.565 0.002-2.167l-0.485-0.486c-0.285-0.292-0.675-0.451-1.085-0.451-0.002 0-0.002 0-0.002 0-0.41 0-0.795 0.161-1.083 0.45l-5.222 5.226-5.224-5.22c-0.599-0.6-1.563-0.603-2.165-0.003l-0.486 0.481c-0.293 0.287-0.453 0.677-0.453 1.086 0 0.411 0.161 0.798 0.45 1.086l5.226 5.222-5.221 5.224c-0.602 0.6-0.602 1.565-0.002 2.169l0.485 0.485c0.287 0.292 0.676 0.451 1.086 0.451 0.408 0 0.798-0.163 1.085-0.45l5.221-5.225 5.222 5.219c0.296 0.299 0.69 0.45 1.085 0.45 0.391 0 0.783-0.149 1.082-0.447l0.485-0.484c0.294-0.285 0.453-0.675 0.453-1.085 0.002-0.41-0.159-0.797-0.448-1.086z"/></svg>`,
+    grip: `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="9" cy="6" r="1.5"/><circle cx="15" cy="6" r="1.5"/><circle cx="9" cy="12" r="1.5"/><circle cx="15" cy="12" r="1.5"/><circle cx="9" cy="18" r="1.5"/><circle cx="15" cy="18" r="1.5"/></svg>`,
+    chevron: `<svg  ${SVG_ATTRS} xmlns="http://www.w3.org/2000/svg" width="20" height="20" aria-hidden="true" viewBox="19.65 32.2 60.55 36.15"><path fill="currentColor" d="M21.364,42.218l24.329,24.329c0.026,0.027,0.034,0.065,0.061,0.091c1.146,1.146,2.659,1.715,4.17,1.711c1.511,0.004,3.023-0.564,4.17-1.711c0.027-0.027,0.034-0.064,0.061-0.091l24.329-24.329c2.285-2.285,2.285-6.024,0-8.308s-6.024-2.285-8.308,0L49.923,54.161L29.672,33.91c-2.285-2.285-6.024-2.285-8.308,0S19.079,39.934,21.364,42.218z"/></svg>`,
     highlight: `<svg ${SVG_ATTRS}><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>`,
     filetext: `<svg ${SVG_ATTRS}><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>`
   };
@@ -136,6 +138,7 @@
     dragDy = 0;
     posX = null;
     posY = null;
+    static POS_KEY = "spokn-toolbar-pos";
     boundMouseMove;
     boundMouseUp;
     constructor(callbacks, initialState) {
@@ -149,15 +152,19 @@
       if (this.host) return;
       this.host = document.createElement("div");
       this.host.id = "spokn-host";
+      const savedPos = this.loadPosition();
+      const defaultStyles = savedPos ? { left: `${savedPos.x}px`, top: `${savedPos.y}px`, right: "auto", transform: "none" } : { right: "16px", top: `${window.scrollY + window.innerHeight / 2}px`, transform: "translateY(-50%)" };
+      if (savedPos) {
+        this.posX = savedPos.x;
+        this.posY = savedPos.y;
+      }
       Object.assign(this.host.style, {
         all: "initial",
-        position: "fixed",
-        right: "16px",
-        top: "50%",
-        transform: "translateY(-50%)",
+        position: "absolute",
         zIndex: "2147483647",
         pointerEvents: "none",
-        fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif'
+        fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+        ...defaultStyles
       });
       this.shadow = this.host.attachShadow({ mode: "open" });
       this.render();
@@ -196,8 +203,6 @@
         playBtn.setAttribute("aria-label", isPlaying ? "Pause" : "Play");
         playBtn.setAttribute("title", isPlaying ? "Pause" : "Play");
       }
-      const stopBtn = this.shadow.getElementById("spokn-stop");
-      if (stopBtn) stopBtn.disabled = this.st.status === "stopped";
       this.syncInput("spokn-speed-slider", this.st.rate);
       this.syncInput("spokn-pitch-slider", this.st.pitch);
       this.syncInput("spokn-vol-slider", this.st.volume);
@@ -218,6 +223,7 @@
       this.shadow.appendChild(panel);
       this.attachListeners();
       this.populateVoices();
+      this.setVoiceHelpLink();
       this.syncAllSliders();
     }
     // ─── HTML ────────────────────────────────────────────────────────────────────
@@ -230,140 +236,157 @@
       const modeIcon = (m) => m === "selection" ? ICONS.highlight : ICONS.filetext;
       const modeLabel = (m) => m === "selection" ? "Selection" : "Full Page";
       return `
-      <div id="spokn-toolbar">
-        <div id="spokn-drag" title="Drag to move" aria-hidden="true">${ICONS.grip}</div>
+      <div id="spokn-settings" class="${this.settingsOpen ? "open" : ""}">
 
-        <button id="spokn-playpause" class="btn btn-play"
-          aria-label="${isPlaying ? "Pause" : "Play"}"
-          title="${isPlaying ? "Pause" : "Play"}">
-          ${isPlaying ? ICONS.pause : ICONS.play}
-        </button>
+        <div class="settings-section">
+          <div class="settings-section-title">Playback</div>
 
-        <button id="spokn-stop" class="btn"
-          aria-label="Stop" title="Stop"
-          ${status === "stopped" ? "disabled" : ""}>
-          ${ICONS.stop}
-        </button>
+          <div class="settings-row">
+            <span class="settings-label">Mode</span>
+            <div class="mode-group" role="group" aria-label="Reading mode">
+              ${["selection", "page"].map((m) => `
+                <button class="mode-btn${mode === m ? " mode-btn-active" : ""}"
+                  data-mode="${m}" aria-pressed="${mode === m}" title="${modeLabel(m)}">
+                  <span class="mode-icon">${modeIcon(m)}</span>
+                  <span class="mode-label">${modeLabel(m)}</span>
+                </button>
+              `).join("")}
+            </div>
+          </div>
 
-        <button id="spokn-settings-toggle"
-          class="btn${this.settingsOpen ? " btn-active" : ""}"
-          aria-label="Settings" title="Settings"
-          aria-expanded="${this.settingsOpen}">
-          ${ICONS.settings}
-        </button>
+          <div class="settings-row">
+            <label class="settings-label" for="spokn-voice-select">Voice</label>
+            <div class="select-wrap">
+              <select id="spokn-voice-select" aria-label="Select voice">
+                <option value="">Loading voices…</option>
+              </select>
+              <span class="select-arrow" aria-hidden="true">${ICONS.chevron}</span>
+            </div>
+          </div>
+          <div class="voice-hint-row">
+            <span class="voice-hint-icon" aria-hidden="true">
+              <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+            </span>
+            <a id="spokn-voice-help-link" class="voice-hint-link" href="#" target="_blank" rel="noopener noreferrer">
+              How to add more voices
+            </a>
+          </div>
 
-        <button id="spokn-close" class="btn btn-close" aria-label="Close" title="Close">
-          ${ICONS.close}
-        </button>
+          <div class="settings-row">
+            <label class="settings-label" for="spokn-speed-slider">Speed</label>
+            <div class="slider-wrap">
+              <input id="spokn-speed-slider" type="range"
+                min="0.5" max="3" step="0.1" value="${rate}"
+                aria-label="Speed" style="--fill:${speedPct}%"/>
+              <span class="slider-val">${rate.toFixed(1)}x</span>
+            </div>
+          </div>
+
+          <div class="settings-row">
+            <label class="settings-label" for="spokn-pitch-slider">Pitch</label>
+            <div class="slider-wrap">
+              <input id="spokn-pitch-slider" type="range"
+                min="0.5" max="2" step="0.1" value="${pitch}"
+                aria-label="Pitch" style="--fill:${pitchPct}%"/>
+              <span class="slider-val">${pitch.toFixed(1)}</span>
+            </div>
+          </div>
+
+          <div class="settings-row">
+            <label class="settings-label" for="spokn-vol-slider">Volume</label>
+            <div class="slider-wrap">
+              <input id="spokn-vol-slider" type="range"
+                min="0" max="1" step="0.05" value="${volume}"
+                aria-label="Volume" style="--fill:${volPct}%"/>
+              <span class="slider-val">${Math.round(volume * 100)}%</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="settings-section">
+          <div class="settings-section-title">Appearance</div>
+
+          <div class="settings-row">
+            <span class="settings-label">Highlight</span>
+            <div class="theme-swatches" role="group" aria-label="Highlight color">
+              ${HIGHLIGHT_THEMES.map((t) => `
+                <button
+                  class="theme-swatch${this.st.highlightTheme === t.id ? " theme-swatch-active" : ""}"
+                  data-theme="${t.id}"
+                  title="${t.label}"
+                  aria-label="${t.label} highlight"
+                  aria-pressed="${this.st.highlightTheme === t.id}"
+                  style="--swatch:${t.swatch}">
+                </button>
+              `).join("")}
+            </div>
+          </div>
+
+          <div class="settings-row">
+            <span class="settings-label">Border</span>
+            <label class="toggle-wrap" title="Show hover border around paragraphs">
+              <input type="checkbox" id="spokn-hover-border-toggle"
+                ${this.st.hoverBorderEnabled ? "checked" : ""}
+                aria-label="Show hover border">
+              <span class="toggle-track"><span class="toggle-thumb"></span></span>
+              <span class="toggle-label">Paragraph hover border</span>
+            </label>
+          </div>
+        </div>
+
+        <div class="settings-section">
+          <div class="settings-section-title">Shortcuts</div>
+          <div id="spokn-shortcuts">
+            <div class="shortcut-row">
+              <span class="shortcut-keys"><kbd>Alt</kbd><kbd>Shift</kbd><kbd>P</kbd></span>
+              <span class="shortcut-desc">Play / Pause</span>
+            </div>
+            <div class="shortcut-row">
+              <span class="shortcut-keys"><kbd>Alt</kbd><kbd>Shift</kbd><kbd>S</kbd></span>
+              <span class="shortcut-desc">Stop</span>
+            </div>
+            <div class="shortcut-row">
+              <span class="shortcut-keys"><kbd>Alt</kbd><kbd>Shift</kbd><kbd>R</kbd></span>
+              <span class="shortcut-desc">Read selection</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="settings-section">
+          <div id="spokn-kofi">
+            <a href="${"https://ko-fi.com/adham_dev"}" target="_blank" rel="noopener noreferrer" id="spokn-kofi-btn">
+              <img src="${chrome.runtime.getURL("kofi.png")}" alt="Ko-fi" id="spokn-kofi-logo"/>
+              Support me on Ko-fi
+            </a>
+          </div>
+          <div id="spokn-version">${"Spokn"} v${"1.0.0"}</div>
+        </div>
+
       </div>
 
-      <div id="spokn-settings" style="display:${this.settingsOpen ? "flex" : "none"}">
+      <div id="spokn-pill-wrap">
+        <button id="spokn-close" aria-label="Close" title="Close">
+          ${ICONS.close}
+        </button>
 
-        <div class="settings-row">
-          <span class="settings-label">Mode</span>
-          <div class="mode-group" role="group" aria-label="Reading mode">
-            ${["selection", "page"].map((m) => `
-              <button class="mode-btn${mode === m ? " mode-btn-active" : ""}"
-                data-mode="${m}" aria-pressed="${mode === m}" title="${modeLabel(m)}">
-                <span class="mode-icon">${modeIcon(m)}</span>
-                <span class="mode-label">${modeLabel(m)}</span>
-              </button>
-            `).join("")}
-          </div>
+        <div id="spokn-pill" class="${this.settingsOpen ? "settings-open" : ""}">
+          <div id="spokn-toolbar">
+            <div id="spokn-drag" title="Drag to move" aria-hidden="true">${ICONS.grip}</div>
+
+            <button id="spokn-playpause" class="btn btn-play"
+              aria-label="${isPlaying ? "Pause" : "Play"}"
+              title="${isPlaying ? "Pause" : "Play"}">
+              ${isPlaying ? ICONS.pause : ICONS.play}
+            </button>
+
+            <button id="spokn-settings-toggle"
+              class="btn${this.settingsOpen ? " btn-active" : ""}"
+              aria-label="Settings" title="Settings"
+            aria-expanded="${this.settingsOpen}">
+            ${ICONS.settings}
+          </button>
         </div>
-
-        <div class="settings-row">
-          <label class="settings-label" for="spokn-voice-select">Voice</label>
-          <div class="select-wrap">
-            <select id="spokn-voice-select" aria-label="Select voice">
-              <option value="">Loading voices…</option>
-            </select>
-            <span class="select-arrow" aria-hidden="true">${ICONS.chevron}</span>
-          </div>
-        </div>
-
-        <div class="settings-row">
-          <label class="settings-label" for="spokn-speed-slider">Speed</label>
-          <div class="slider-wrap">
-            <input id="spokn-speed-slider" type="range"
-              min="0.5" max="3" step="0.1" value="${rate}"
-              aria-label="Speed" style="--fill:${speedPct}%"/>
-            <span class="slider-val">${rate.toFixed(1)}x</span>
-          </div>
-        </div>
-
-        <div class="settings-row">
-          <label class="settings-label" for="spokn-pitch-slider">Pitch</label>
-          <div class="slider-wrap">
-            <input id="spokn-pitch-slider" type="range"
-              min="0.5" max="2" step="0.1" value="${pitch}"
-              aria-label="Pitch" style="--fill:${pitchPct}%"/>
-            <span class="slider-val">${pitch.toFixed(1)}</span>
-          </div>
-        </div>
-
-        <div class="settings-row">
-          <label class="settings-label" for="spokn-vol-slider">Volume</label>
-          <div class="slider-wrap">
-            <input id="spokn-vol-slider" type="range"
-              min="0" max="1" step="0.05" value="${volume}"
-              aria-label="Volume" style="--fill:${volPct}%"/>
-            <span class="slider-val">${Math.round(volume * 100)}%</span>
-          </div>
-        </div>
-
-        <div class="settings-row">
-          <span class="settings-label">Highlight</span>
-          <div class="theme-swatches" role="group" aria-label="Highlight color">
-            ${HIGHLIGHT_THEMES.map((t) => `
-              <button
-                class="theme-swatch${this.st.highlightTheme === t.id ? " theme-swatch-active" : ""}"
-                data-theme="${t.id}"
-                title="${t.label}"
-                aria-label="${t.label} highlight"
-                aria-pressed="${this.st.highlightTheme === t.id}"
-                style="--swatch:${t.swatch}">
-              </button>
-            `).join("")}
-          </div>
-        </div>
-
-        <div class="settings-row">
-          <span class="settings-label">Border</span>
-          <label class="toggle-wrap" title="Show hover border around paragraphs when hovering">
-            <input type="checkbox" id="spokn-hover-border-toggle"
-              ${this.st.hoverBorderEnabled ? "checked" : ""}
-              aria-label="Show hover border">
-            <span class="toggle-track"><span class="toggle-thumb"></span></span>
-            <span class="toggle-label">Paragraph hover border</span>
-          </label>
-        </div>
-
-        <div id="spokn-shortcuts">
-          <div class="shortcut-row">
-            <span class="shortcut-keys"><kbd>Alt</kbd><kbd>Shift</kbd><kbd>P</kbd></span>
-            <span class="shortcut-desc">Play / Pause</span>
-          </div>
-          <div class="shortcut-row">
-            <span class="shortcut-keys"><kbd>Alt</kbd><kbd>Shift</kbd><kbd>S</kbd></span>
-            <span class="shortcut-desc">Stop</span>
-          </div>
-          <div class="shortcut-row">
-            <span class="shortcut-keys"><kbd>Alt</kbd><kbd>Shift</kbd><kbd>R</kbd></span>
-            <span class="shortcut-desc">Read selection</span>
-          </div>
-        </div>
-
-        <div id="spokn-kofi">
-          <a href="${"https://ko-fi.com/adham_dev"}" target="_blank" rel="noopener noreferrer" id="spokn-kofi-btn">
-            <svg id="spokn-kofi-logo" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" aria-hidden="true">
-              <path fill="#fff" d="M23.881 8.948c-.773-4.085-4.859-4.593-4.859-4.593H.723c-.604 0-.679.798-.679.798s-.082 9.298 0 11.906c.198 2.826 2.dive 2.951 2.151 2.954h10.123c2.253-.026 2.886-1.729 2.886-1.729.498.638 1.611 1.729 3.495 1.729 0 0 3.947.005 5.458-3.322.085-.199.173-.419.252-.641.604-1.666.604-3.366-.528-6.102zm-2.652 4.118c-.458 1.095-1.535 1.636-2.66 1.636-1.087 0-1.801-.761-1.801-.761v.654h-1.596V7.509h1.611v3.917c0 0 .747-.802 1.786-.802 1.083 0 2.073.562 2.465 1.563.205.521.303 1.082.197 1.879h-.002zm-12.74-6.223c-.09-.341-.449-.611-.838-.637-.264-.018-.616-.015-1.063-.013L5.747 6.2c-.551.003-.604.601-.604.601v6.702h1.596v-2.514h1.001c.671 0 1.209-.078 1.617-.282.752-.375 1.102-1.046 1.102-1.992 0-.892-.311-1.508-.97-1.872zM7.74 9.499h-.997V7.722l1.027-.002c.678.003.96.316.96.876 0 .592-.367.903-.99.903zm9.26.717c-.413 0-.799.194-.799.194v2.055s.376.216.799.216c.599 0 1.009-.496 1.009-1.23 0-.736-.41-1.235-1.009-1.235z"/>
-            </svg>
-            Support me on Ko-fi
-          </a>
-          <span>${"Spokn"} v${"1.0.0"}</span>
-        </div>
-
+      </div>
       </div>
     `;
     }
@@ -375,20 +398,20 @@
         else if (this.st.status === "paused") this.cb.onResume();
         else this.cb.onPlay(this.st.mode);
       });
-      s.getElementById("spokn-stop")?.addEventListener("click", () => this.cb.onStop());
       s.getElementById("spokn-settings-toggle")?.addEventListener("click", () => {
         this.settingsOpen = !this.settingsOpen;
         const panel = s.getElementById("spokn-settings");
+        const pill = s.getElementById("spokn-pill");
         const btn = s.getElementById("spokn-settings-toggle");
-        if (panel) panel.style.display = this.settingsOpen ? "flex" : "none";
+        if (panel) panel.classList.toggle("open", this.settingsOpen);
+        if (pill) pill.classList.toggle("settings-open", this.settingsOpen);
         if (btn) {
           btn.setAttribute("aria-expanded", String(this.settingsOpen));
           btn.classList.toggle("btn-active", this.settingsOpen);
         }
       });
       s.getElementById("spokn-close")?.addEventListener("click", () => {
-        this.cb.onStop();
-        this.unmount();
+        this.cb.onClose();
       });
       s.querySelectorAll(".mode-btn").forEach((btn) => {
         btn.addEventListener("click", (e) => {
@@ -450,18 +473,20 @@
         me.preventDefault();
         this.dragging = true;
         const rect = this.host.getBoundingClientRect();
+        const pageLeft = rect.left + window.scrollX;
+        const pageTop = rect.top + window.scrollY;
         if (this.posX === null) {
-          this.posX = rect.left;
-          this.posY = rect.top;
+          this.posX = pageLeft;
+          this.posY = pageTop;
           Object.assign(this.host.style, {
-            left: `${rect.left}px`,
-            top: `${rect.top}px`,
+            left: `${pageLeft}px`,
+            top: `${pageTop}px`,
             right: "auto",
             transform: "none"
           });
         }
-        this.dragDx = me.clientX - rect.left;
-        this.dragDy = me.clientY - rect.top;
+        this.dragDx = me.clientX + window.scrollX - pageLeft;
+        this.dragDy = me.clientY + window.scrollY - pageTop;
         this.host.style.cursor = "grabbing";
       });
     }
@@ -520,11 +545,19 @@
         speechSynthesis.addEventListener("voiceschanged", doPopulate, { once: true });
       }
     }
-    // ─── Drag ─────────────────────────────────────────────────────────────────────
+    // ─── Voice help link ─────────────────────────────────────────────────────────
+    setVoiceHelpLink() {
+      const link = this.shadow?.getElementById("spokn-voice-help-link");
+      if (!link) return;
+      const ua = navigator.userAgent.toLowerCase();
+      const os = ua.includes("mac") ? "macOS" : ua.includes("win") ? "Windows" : "my device";
+      const prompt = `How do I add more text-to-speech voices on ${os}? I'm using a browser extension that reads web pages aloud and I want more voice options to choose from. Please give me simple step-by-step instructions for a regular user, no code.`;
+      link.href = `https://chatgpt.com/?q=${encodeURIComponent(prompt)}`;
+    }
     onMouseMove(e) {
       if (!this.dragging || !this.host) return;
-      this.posX = e.clientX - this.dragDx;
-      this.posY = e.clientY - this.dragDy;
+      this.posX = e.clientX + window.scrollX - this.dragDx;
+      this.posY = e.clientY + window.scrollY - this.dragDy;
       this.host.style.left = `${this.posX}px`;
       this.host.style.top = `${this.posY}px`;
     }
@@ -532,6 +565,25 @@
       if (!this.dragging) return;
       this.dragging = false;
       if (this.host) this.host.style.cursor = "";
+      if (this.posX !== null && this.posY !== null) {
+        this.savePosition(this.posX, this.posY);
+      }
+    }
+    savePosition(x, y) {
+      try {
+        localStorage.setItem(FloatingToolbar.POS_KEY, JSON.stringify({ x, y }));
+      } catch {
+      }
+    }
+    loadPosition() {
+      try {
+        const raw = localStorage.getItem(FloatingToolbar.POS_KEY);
+        if (!raw) return null;
+        const { x, y } = JSON.parse(raw);
+        if (typeof x === "number" && typeof y === "number") return { x, y };
+      } catch {
+      }
+      return null;
     }
     // ─── Slider helpers ───────────────────────────────────────────────────────────
     syncInput(id, value) {
@@ -554,36 +606,105 @@
       return `
       *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
-      /* SVG icons inherit color from parent */
+      /* ── Design tokens ───────────────────────────────────────────────────── */
+      /*
+        --bg:        panel background
+        --surface:   slightly lighter surface for inputs/buttons
+        --border:    subtle divider/border
+        --accent:    primary action colour (bright indigo-blue)
+        --accent-dim: muted accent for fills
+        --text:      primary text
+        --muted:     secondary / label text
+        --subtle:    placeholder / disabled text
+      */
+
       svg { display: block; flex-shrink: 0; }
 
       #spokn-panel {
         pointer-events: auto;
-        background: #0a0a0f;
-        border-radius: 16px;
-        border: 1px solid rgba(39,103,183,0.35);
-        box-shadow: 0 12px 40px rgba(0,0,0,0.55), 0 2px 8px rgba(0,0,0,0.3);
-        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-        font-size: 13px;
-        color: #f1f5f9;
-        overflow: hidden;
+        position: relative;
+        display: flex;
+        flex-direction: row;
+        align-items: flex-start;
+        gap: 10px;
+        background: transparent;
+        overflow: visible;
         opacity: 0;
         transform: translateX(20px);
-        transition: opacity 0.2s ease, transform 0.2s ease;
+        transition: opacity 0.22s ease, transform 0.22s ease;
         user-select: none;
+        --bg:         #0f1117;
+        --surface:    rgba(255,255,255,0.06);
+        --surface-hv: rgba(255,255,255,0.1);
+        --border:     rgba(255,255,255,0.09);
+        --accent:     #0277D4;
+        --accent-dim: rgba(2,119,212,0.18);
+        --text:       #f0f4ff;
+        --muted:      #8b95a8;
+        --subtle:     #4a5568;
       }
 
-      /* Toolbar column */
+      /* ── Pill wrap — hover zone covering pill + close button area ────────── */
+      #spokn-pill-wrap {
+        position: relative;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        padding-top: 32px;
+      }
+
+      /* ── Pill ────────────────────────────────────────────────────────────── */
+      #spokn-pill {
+        background: rgba(30,30,30,0.75);
+        border-radius: 12px;
+        border: 1px solid rgba(255,255,255,0.08);
+        box-shadow: 0 2px 12px rgba(0,0,0,0.2);
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        font-size: 13px;
+        color: var(--text);
+        overflow: visible;
+        position: relative;
+        transition: background 0.18s ease, box-shadow 0.18s ease;
+      }
+      #spokn-pill-wrap:hover #spokn-pill,
+      #spokn-pill.settings-open {
+        background: #1e1e1e;
+        box-shadow: 0 2px 12px rgba(0,0,0,0.3);
+      }
+
+      /* ── Close button ────────────────────────────────────────────────────── */
+      #spokn-close {
+        all: unset;
+        align-self: center;
+        width: 24px;
+        height: 24px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        cursor: pointer;
+        color: #888;
+        opacity: 0;
+        pointer-events: none;
+        transition: opacity 0.15s ease, color 0.12s, transform 0.08s;
+        z-index: 10;
+        margin-bottom: 4px;
+      }
+      #spokn-close svg { width: 14px; height: 14px; }
+      #spokn-pill-wrap:hover #spokn-close { opacity: 1; pointer-events: auto; }
+      #spokn-close:hover { color: #888; }
+      #spokn-close:active { transform: scale(0.92); }
+
+      /* ── Toolbar column ──────────────────────────────────────────────────── */
       #spokn-toolbar {
         display: flex;
         flex-direction: column;
         align-items: center;
-        gap: 2px;
-        padding: 8px 6px;
+        gap: 6px;
+        padding: 5px 10px 2px;
       }
 
       #spokn-drag {
-        color: #374151;
+        color: #fff;
         cursor: grab;
         padding: 4px;
         flex-shrink: 0;
@@ -591,82 +712,109 @@
         align-items: center;
         border-radius: 6px;
         transition: color 0.12s;
-        margin-bottom: 2px;
+        margin-bottom: 4px;
       }
-      #spokn-drag:hover  { color: #6b7280; }
+      #spokn-drag:hover  { color: #fff; }
       #spokn-drag:active { cursor: grabbing; }
 
-      /* Buttons */
+      /* ── Buttons ─────────────────────────────────────────────────────────── */
       .btn {
         all: unset;
         display: flex;
         align-items: center;
         justify-content: center;
-        width: 30px;
-        height: 30px;
-        border-radius: 8px;
+        width: 44px;
+        height: 44px;
+        border-radius: 10px;
         cursor: pointer;
-        color: #94a3b8;
+        color: #fff;
         transition: background 0.12s, color 0.12s, transform 0.08s;
         flex-shrink: 0;
       }
-      .btn:hover  { background: rgba(255,255,255,0.08); color: #f1f5f9; }
+      .btn:hover  { background: var(--surface-hv); color: #fff; }
       .btn:active { transform: scale(0.9); }
       .btn[disabled] { opacity: 0.28; cursor: not-allowed; pointer-events: none; }
 
-      .btn-accent {
-        background: #2767B7;
-        color: #fff;
-        width: 32px;
-        height: 32px;
-        border-radius: 10px;
-      }
-      .btn-accent:hover { background: #1d52a0; color: #fff; }
-
       .btn-play {
-        color: #2767B7;
-        width: 32px;
-        height: 32px;
+        color: #fff;
+        background: var(--accent);
+        border-radius: 50%;
+        width: 44px;
+        height: 44px;
       }
-      .btn-play:hover { background: transparent; color: #5b8fd4; }
+      .btn-play:hover { background: var(--accent); filter: brightness(1.15); }
 
-      .btn-active { background: rgba(39,103,183,0.2); color: #5b8fd4; }
-      .btn-active:hover { background: rgba(39,103,183,0.3); color: #a8c4e8; }
+      .btn-active { background: var(--accent-dim); color: var(--accent); }
+      .btn-active:hover { background: rgba(2,119,212,0.28); color: #7eb3ff; }
 
-      .btn-close:hover { background: rgba(239,68,68,0.15); color: #f87171; }
-
-      /* Settings panel — opens to the left */
+      /* ── Settings panel ──────────────────────────────────────────────────── */
       #spokn-settings {
-        border-top: 1px solid rgba(255,255,255,0.06);
-        padding: 12px 14px 14px;
+        display: none;
         flex-direction: column;
-        gap: 10px;
-        background: rgba(0,0,0,0.15);
-        min-width: 260px;
-        max-width: 300px;
+        gap: 0;
+        background: #1e1e1e;
+        border: 1px solid rgba(255,255,255,0.08);
+        border-radius: 16px;
+        box-shadow: 0 2px 12px rgba(0,0,0,0.3);
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        color: var(--text);
+        width: 280px;
+        overflow: hidden;
+        /* Absolute so it doesn't affect the pill position */
+        position: absolute;
+        right: calc(100% + 10px);
+        top: 50%;
+        transform: translateY(-50%);
+        animation: spokn-settings-in 0.18s ease forwards;
+      }
+      #spokn-settings.open { display: flex; }
+
+      @keyframes spokn-settings-in {
+        from { opacity: 0; transform: translateX(12px); }
+        to   { opacity: 1; transform: translateX(0); }
+      }
+
+      .settings-section {
+        padding: 14px 16px;
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+      }
+      .settings-section + .settings-section {
+        border-top: 1px solid var(--border);
+      }
+
+      .settings-section-title {
+        font-size: 9px;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.12em;
+        color: #c0c8d8;
+        margin-bottom: 2px;
       }
 
       .settings-row {
         display: flex;
         align-items: center;
-        gap: 8px;
+        gap: 10px;
       }
 
       .settings-label {
-        font-size: 10px;
-        font-weight: 600;
-        text-transform: uppercase;
-        letter-spacing: 0.07em;
-        color: #475569;
-        width: 42px;
+        font-size: 11px;
+        font-weight: 500;
+        color: var(--muted);
+        width: 46px;
         flex-shrink: 0;
       }
 
-      /* Mode buttons */
+      /* ── Mode buttons ────────────────────────────────────────────────────── */
       .mode-group {
         display: flex;
-        gap: 4px;
         flex: 1;
+        background: rgba(0,0,0,0.25);
+        border-radius: 8px;
+        padding: 3px;
+        gap: 3px;
       }
       .mode-btn {
         all: unset;
@@ -674,72 +822,84 @@
         display: flex;
         align-items: center;
         justify-content: center;
-        gap: 4px;
+        gap: 5px;
         padding: 5px 4px;
-        border-radius: 7px;
-        border: 1px solid rgba(255,255,255,0.08);
-        font-size: 10px;
-        color: #64748b;
+        border-radius: 6px;
+        font-size: 11px;
+        font-weight: 500;
+        color: rgba(255,255,255,0.45);
         cursor: pointer;
-        transition: all 0.12s;
+        transition: all 0.15s;
         font-family: inherit;
         white-space: nowrap;
       }
-      .mode-btn:hover { border-color: rgba(39,103,183,0.5); color: #f1f5f9; }
+      .mode-btn:hover { color: rgba(255,255,255,0.8); background: rgba(255,255,255,0.06); }
       .mode-btn-active {
-        background: #2767B7;
-        border-color: #2767B7;
+        background: var(--accent);
         color: #fff;
         font-weight: 600;
+        box-shadow: 0 1px 4px rgba(2,119,212,0.4);
       }
+      .mode-btn-active:hover { background: var(--accent); color: #fff; }
       .mode-icon { display: flex; align-items: center; }
       .mode-icon svg { width: 12px; height: 12px; }
 
-      /* Select */
-      .select-wrap {
-        position: relative;
-        flex: 1;
+      /* ── Voice hint ──────────────────────────────────────────────────────── */
+      .voice-hint-row {
+        display: flex;
+        align-items: center;
+        gap: 4px;
+        padding-left: 56px; /* align under the select, past the label width + gap */
+        margin-top: -6px;
       }
+      .voice-hint-icon { display: flex; align-items: center; color: var(--muted); flex-shrink: 0; }
+      .voice-hint-link {
+        font-size: 10px;
+        color: var(--accent);
+        text-decoration: none;
+        opacity: 0.85;
+        transition: opacity 0.12s;
+        line-height: 1;
+      }
+      .voice-hint-link:hover { opacity: 1; text-decoration: underline; }
+
+      /* ── Select ──────────────────────────────────────────────────────────── */
+      .select-wrap { position: relative; flex: 1; }
       select {
         width: 100%;
-        padding: 6px 26px 6px 10px;
-        background: rgba(0,0,0,0.3);
-        color: #f1f5f9;
-        border: 1px solid rgba(255,255,255,0.08);
+        padding: 7px 26px 7px 10px;
+        background: var(--surface);
+        color: var(--text);
+        border: 1px solid var(--border);
         border-radius: 8px;
-        font-size: 12px;
+        font-size: 11px;
         font-family: inherit;
         appearance: none;
         -webkit-appearance: none;
         cursor: pointer;
         outline: none;
-        transition: border-color 0.15s;
+        transition: border-color 0.15s, background 0.15s;
       }
-      select:focus { border-color: #2767B7; }
+      select:focus { border-color: var(--accent); background: var(--surface-hv); }
       .select-arrow {
         position: absolute;
-        right: 6px;
+        right: 7px;
         top: 50%;
         transform: translateY(-50%);
-        color: #475569;
+        color: var(--muted);
         pointer-events: none;
         display: flex;
         align-items: center;
       }
-      .select-arrow svg { width: 14px; height: 14px; }
+      .select-arrow svg { width: 12px; height: 12px; }
 
-      /* Sliders */
-      .slider-wrap {
-        display: flex;
-        align-items: center;
-        gap: 8px;
-        flex: 1;
-      }
+      /* ── Sliders ─────────────────────────────────────────────────────────── */
+      .slider-wrap { display: flex; align-items: center; gap: 8px; flex: 1; }
       .slider-val {
         font-size: 10px;
         font-weight: 700;
-        color: #2767B7;
-        min-width: 32px;
+        color: var(--accent);
+        min-width: 30px;
         text-align: right;
         flex-shrink: 0;
         letter-spacing: 0.02em;
@@ -754,8 +914,8 @@
         cursor: pointer;
         background: linear-gradient(
           to right,
-          #2767B7 0%,
-          #2767B7 var(--fill, 50%),
+          var(--accent) 0%,
+          var(--accent) var(--fill, 50%),
           rgba(255,255,255,0.1) var(--fill, 50%),
           rgba(255,255,255,0.1) 100%
         );
@@ -765,42 +925,36 @@
         width: 13px;
         height: 13px;
         border-radius: 50%;
-        background: #2767B7;
-        border: 2px solid #a8c4e8;
-        box-shadow: 0 1px 4px rgba(0,0,0,0.5);
+        background: #fff;
+        border: 2px solid var(--accent);
+        box-shadow: 0 1px 4px rgba(0,0,0,0.6);
         transition: transform 0.1s;
       }
       input[type=range]::-webkit-slider-thumb:hover { transform: scale(1.3); }
 
-      /* Theme swatches */
-      .theme-swatches {
-        display: flex;
-        gap: 5px;
-        flex-wrap: wrap;
-        flex: 1;
-      }
+      /* ── Theme swatches ──────────────────────────────────────────────────── */
+      .theme-swatches { display: flex; gap: 6px; flex-wrap: wrap; flex: 1; }
       .theme-swatch {
         all: unset;
-        width: 20px;
-        height: 20px;
+        width: 18px;
+        height: 18px;
         border-radius: 50%;
         background: var(--swatch);
         cursor: pointer;
         border: 2px solid transparent;
         transition: transform 0.12s, border-color 0.12s;
         flex-shrink: 0;
-        box-shadow: 0 1px 3px rgba(0,0,0,0.4);
+        box-shadow: 0 1px 3px rgba(0,0,0,0.5);
       }
-      .theme-swatch:hover { transform: scale(1.2); }
+      .theme-swatch:hover { transform: scale(1.25); }
       .theme-swatch-active {
-        border-color: #f1f5f9;
-        transform: scale(1.15);
-        box-shadow: 0 0 0 2px rgba(255,255,255,0.25);
+        border-color: #fff;
+        transform: scale(1.2);
+        box-shadow: 0 0 0 2px rgba(255,255,255,0.2);
       }
-      /* "None" swatch — show a dash */
       .theme-swatch[data-theme="none"] {
-        background: rgba(255,255,255,0.06);
-        border: 2px solid rgba(255,255,255,0.15);
+        background: var(--surface);
+        border: 2px solid var(--border);
         position: relative;
       }
       .theme-swatch[data-theme="none"]::after {
@@ -808,77 +962,26 @@
         position: absolute;
         inset: 0;
         margin: auto;
-        width: 8px;
+        width: 7px;
         height: 2px;
-        background: #64748b;
+        background: var(--muted);
         border-radius: 2px;
       }
 
-      /* Shortcuts */
-      #spokn-shortcuts {
-        display: flex;
-        flex-direction: column;
-        gap: 4px;
-        padding: 8px 0 4px;
-        border-top: 1px solid rgba(255,255,255,0.05);
-      }
-      .shortcut-row {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        gap: 8px;
-      }
-      .shortcut-keys {
-        display: flex;
-        gap: 3px;
-        align-items: center;
-      }
-      kbd {
-        display: inline-flex;
-        align-items: center;
-        padding: 1px 5px;
-        background: rgba(255,255,255,0.07);
-        border: 1px solid rgba(255,255,255,0.12);
-        border-radius: 4px;
-        font-family: inherit;
-        font-size: 9px;
-        color: #94a3b8;
-        line-height: 1.6;
-      }
-      .shortcut-desc {
-        font-size: 10px;
-        color: #475569;
-        text-align: right;
-      }
-
-      /* Toggle switch */
-      .toggle-wrap {
-        display: flex;
-        align-items: center;
-        gap: 8px;
-        cursor: pointer;
-        flex: 1;
-      }
-      .toggle-wrap input[type=checkbox] {
-        position: absolute;
-        opacity: 0;
-        width: 0;
-        height: 0;
-      }
+      /* ── Toggle switch ───────────────────────────────────────────────────── */
+      .toggle-wrap { display: flex; align-items: center; gap: 8px; cursor: pointer; flex: 1; }
+      .toggle-wrap input[type=checkbox] { position: absolute; opacity: 0; width: 0; height: 0; }
       .toggle-track {
         position: relative;
         width: 28px;
         height: 16px;
-        background: rgba(255,255,255,0.1);
+        background: var(--surface-hv);
         border-radius: 99px;
         flex-shrink: 0;
         transition: background 0.15s;
-        border: 1px solid rgba(255,255,255,0.08);
+        border: 1px solid var(--border);
       }
-      .toggle-wrap input:checked + .toggle-track {
-        background: #2767B7;
-        border-color: #2767B7;
-      }
+      .toggle-wrap input:checked + .toggle-track { background: var(--accent); border-color: var(--accent); }
       .toggle-thumb {
         position: absolute;
         top: 2px;
@@ -890,52 +993,50 @@
         transition: transform 0.15s;
         box-shadow: 0 1px 3px rgba(0,0,0,0.4);
       }
-      .toggle-wrap input:checked ~ .toggle-track .toggle-thumb,
-      .toggle-wrap input:checked + .toggle-track .toggle-thumb {
-        transform: translateX(12px);
-      }
-      .toggle-label {
-        font-size: 11px;
-        color: #94a3b8;
-      }
+      .toggle-wrap input:checked + .toggle-track .toggle-thumb { transform: translateX(12px); }
+      .toggle-label { font-size: 11px; color: var(--muted); }
 
-      /* Ko-fi */
-      #spokn-kofi {
-        display: flex;
+      /* ── Shortcuts ───────────────────────────────────────────────────────── */
+      #spokn-shortcuts { display: flex; flex-direction: column; gap: 6px; }
+      .shortcut-row { display: flex; align-items: center; justify-content: space-between; }
+      .shortcut-keys { display: flex; gap: 3px; align-items: center; }
+      kbd {
+        display: inline-flex;
         align-items: center;
-        justify-content: space-between;
-        padding-top: 6px;
-        border-top: 1px solid rgba(255,255,255,0.05);
-        margin-top: 2px;
+        padding: 2px 5px;
+        background: var(--surface);
+        border: 1px solid rgba(255,255,255,0.14);
+        border-radius: 4px;
+        font-family: inherit;
+        font-size: 9px;
+        color: var(--text);
+        line-height: 1.6;
       }
+      .shortcut-desc { font-size: 10px; color: var(--muted); }
+
+      /* ── Ko-fi ───────────────────────────────────────────────────────────── */
+      #spokn-kofi { display: flex; align-items: center; justify-content: center; }
       #spokn-kofi-btn {
         display: inline-flex;
         align-items: center;
-        gap: 6px;
-        font-size: 11px;
-        font-weight: 600;
-        color: #fff;
+        gap: 10px;
+        font-size: 13px;
+        font-weight: 700;
+        color: #000;
         text-decoration: none;
-        padding: 5px 10px;
-        border-radius: 6px;
-        background: #FF5E5B;
+        padding: 9px 16px;
+        border-radius: 10px;
+        background: "#72A4F2";
         border: none;
-        transition: background 0.15s, transform 0.1s;
+        transition: filter 0.15s, transform 0.1s;
         letter-spacing: 0.01em;
+        width: 100%;
+        justify-content: center;
       }
-      #spokn-kofi-btn:hover {
-        background: #ff4541;
-        transform: translateY(-1px);
-      }
-      #spokn-kofi-btn:active {
-        transform: translateY(0);
-      }
-      #spokn-kofi-logo {
-        width: 16px;
-        height: 16px;
-        flex-shrink: 0;
-      }
-      #spokn-kofi > span { font-size: 10px; color: #1e293b; }
+      #spokn-kofi-btn:hover { filter: brightness(1.12); transform: translateY(-1px); }
+      #spokn-kofi-btn:active { transform: translateY(0); filter: brightness(0.95); }
+      #spokn-kofi-logo { width: 24px; height: 24px; flex-shrink: 0; object-fit: contain; }
+      #spokn-version { text-align: center; font-size: 10px; color: "#72A4F2"; margin-top: 0px; }
     `;
     }
   }
@@ -1124,8 +1225,16 @@
     words;
     currentWordIdx = -1;
     currentSentenceIdx = -1;
+    // Suppress auto-scroll for a few seconds after the user manually scrolls
+    userScrolledAt = 0;
+    USER_SCROLL_SUPPRESS_MS = 5e3;
+    scrollListener = null;
     constructor(words) {
       this.words = words;
+      this.scrollListener = () => {
+        this.userScrolledAt = Date.now();
+      };
+      window.addEventListener("scroll", this.scrollListener, { passive: true, capture: true });
     }
     /**
      * Highlight the word at `wordIdx` and its containing sentence.
@@ -1150,7 +1259,7 @@
       }
       this.scrollIntoView(next.span);
     }
-    /** Remove all highlights — called on stop/pause */
+    /** Remove all highlights and detach scroll listener — called on stop/pause */
     clearAll() {
       if (this.currentWordIdx >= 0 && this.currentWordIdx < this.words.length) {
         this.words[this.currentWordIdx]?.span.classList.remove(ACTIVE_WORD_CLASS);
@@ -1160,10 +1269,17 @@
       });
       this.currentWordIdx = -1;
       this.currentSentenceIdx = -1;
+      this.detachScrollListener();
     }
     /** Reset to beginning without touching DOM */
     reset() {
       this.clearAll();
+    }
+    detachScrollListener() {
+      if (this.scrollListener) {
+        window.removeEventListener("scroll", this.scrollListener, { capture: true });
+        this.scrollListener = null;
+      }
     }
     findSentenceSpan(wordSpan) {
       if (!wordSpan) return null;
@@ -1176,6 +1292,10 @@
     }
     scrollIntoView(el) {
       try {
+        if (Date.now() - this.userScrolledAt < this.USER_SCROLL_SUPPRESS_MS) return;
+        const rect = el.getBoundingClientRect();
+        const inView = rect.top >= 0 && rect.bottom <= (window.innerHeight || document.documentElement.clientHeight);
+        if (inView) return;
         el.scrollIntoView({ behavior: "smooth", block: "center", inline: "nearest" });
       } catch {
       }
@@ -1245,6 +1365,17 @@
     }
     updateOptions(opts) {
       this.options = { ...this.options, ...opts };
+    }
+    /** Update options and restart the current chunk if playing */
+    updateOptionsAndRestart(opts) {
+      this.options = { ...this.options, ...opts };
+      if (this.isStopped || this.isPaused) return;
+      speechSynthesis.cancel();
+      setTimeout(() => {
+        if (!this.isStopped && !this.isPaused) {
+          this.speakChunk(this.chunkIndex);
+        }
+      }, 80);
     }
     async play(words) {
       this.stop();
@@ -1442,6 +1573,9 @@
         onStop: () => {
           stopReading();
         },
+        onClose: () => {
+          teardown();
+        },
         onVoiceChange: async (voiceName) => {
           state.voiceName = voiceName;
           tts?.updateOptions({ voiceName });
@@ -1449,17 +1583,17 @@
         },
         onSpeedChange: async (rate) => {
           state.rate = rate;
-          tts?.updateOptions({ rate });
+          tts?.updateOptionsAndRestart({ rate });
           await chrome.storage.sync.set({ rate });
         },
         onPitchChange: async (pitch) => {
           state.pitch = pitch;
-          tts?.updateOptions({ pitch });
+          tts?.updateOptionsAndRestart({ pitch });
           await chrome.storage.sync.set({ pitch });
         },
         onVolumeChange: async (volume) => {
           state.volume = volume;
-          tts?.updateOptions({ volume });
+          tts?.updateOptionsAndRestart({ volume });
           await chrome.storage.sync.set({ volume });
         },
         onModeChange: async (mode) => {
@@ -1674,10 +1808,18 @@
   }
   function onHover(e) {
     if (!hoverBorderEnabled) return;
-    e.target.closest(CLICKABLE)?.classList.add("spokn-clickable-hover");
+    const next = e.target.closest(CLICKABLE);
+    document.querySelectorAll(".spokn-clickable-hover").forEach((el) => {
+      if (el !== next) el.classList.remove("spokn-clickable-hover");
+    });
+    next?.classList.add("spokn-clickable-hover");
   }
   function onHoverOut(e) {
-    e.target.classList.remove("spokn-clickable-hover");
+    const related = e.relatedTarget;
+    const highlighted = e.target.closest(CLICKABLE);
+    if (highlighted && (!related || !highlighted.contains(related))) {
+      highlighted.classList.remove("spokn-clickable-hover");
+    }
   }
   function onClickRead(e) {
     if (e.target.closest("#spokn-host")) return;
@@ -1689,17 +1831,52 @@
     el.classList.remove("spokn-clickable-hover");
     startReading("page", el).catch((ex) => ERR("click-to-read threw:", ex));
   }
+  function teardown() {
+    const t = toolbar;
+    toolbar = null;
+    try {
+      tts?.stop();
+    } catch {
+    }
+    tts = null;
+    disableClickToRead();
+    disableWordHover();
+    try {
+      if (walkResult) {
+        walkResult.restore();
+      } else {
+        document.querySelectorAll(".spokn-sentence").forEach((el) => {
+          const parent = el.parentNode;
+          if (!parent) return;
+          parent.replaceChild(document.createTextNode(el.textContent ?? ""), el);
+        });
+        document.querySelectorAll(".spokn-word").forEach((el) => {
+          const parent = el.parentNode;
+          if (!parent) return;
+          parent.replaceChild(document.createTextNode(el.textContent ?? ""), el);
+        });
+      }
+    } catch (e) {
+      ERR("teardown: DOM restore failed:", e);
+    }
+    walkResult = null;
+    document.querySelectorAll(".spokn-clickable-hover, .spokn-word-hover, .spokn-word-active, .spokn-sentence-active").forEach((el) => el.classList.remove("spokn-clickable-hover", "spokn-word-hover", "spokn-word-active", "spokn-sentence-active"));
+    removeTheme();
+    state = {
+      ...DEFAULT_STATE,
+      voiceName: state.voiceName,
+      rate: state.rate,
+      pitch: state.pitch,
+      volume: state.volume,
+      mode: state.mode
+    };
+    t?.unmount();
+  }
   function toggleToolbar() {
     LOG("toggleToolbar() — visible:", toolbar?.isVisible());
     if (toolbarMounting) return;
     if (toolbar?.isVisible()) {
-      stopReading();
-      disableClickToRead();
-      disableWordHover();
-      walkResult?.restore();
-      walkResult = null;
-      toolbar.unmount();
-      toolbar = null;
+      teardown();
       return;
     }
     toolbarMounting = true;
@@ -1715,6 +1892,7 @@
           ERR("initial walkPage failed:", e);
         }
       }
+      applyTheme(currentTheme);
       LOG("toolbar mounted");
     } catch (e) {
       ERR("toolbar mount failed:", e);
@@ -1775,6 +1953,7 @@
             case "STOP":
               stopReading();
               disableClickToRead();
+              disableWordHover();
               sendResponse({ success: true });
               break;
             case "SET_VOICE":

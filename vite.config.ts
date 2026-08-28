@@ -42,6 +42,12 @@ export default defineConfig({
         ],
         permissions: ['storage', 'activeTab', 'scripting', 'contextMenus'],
         host_permissions: ['<all_urls>', 'file:///*'],
+        web_accessible_resources: [
+          {
+            resources: ['kofi.png'],
+            matches: ['<all_urls>'],
+          },
+        ],
         commands: {
           'toggle-play': {
             suggested_key: { default: 'Alt+Shift+P' },

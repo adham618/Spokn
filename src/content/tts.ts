@@ -137,6 +137,19 @@ export class TTS {
     this.options = { ...this.options, ...opts };
   }
 
+  /** Update options and restart the current chunk if playing */
+  updateOptionsAndRestart(opts: Partial<TTSOptions>): void {
+    this.options = { ...this.options, ...opts };
+    if (this.isStopped || this.isPaused) return;
+    // Cancel current utterance and re-speak the current chunk from the top
+    speechSynthesis.cancel();
+    setTimeout(() => {
+      if (!this.isStopped && !this.isPaused) {
+        this.speakChunk(this.chunkIndex);
+      }
+    }, 80);
+  }
+
   async play(words: WordNode[]): Promise<void> {
     this.stop();
     if (words.length === 0) return;

@@ -11,15 +11,24 @@
  */
 
 import type { WordNode } from './textWalker.js';
-import { ACTIVE_WORD_CLASS, ACTIVE_SENTENCE_CLASS, SENTENCE_CLASS } from './textWalker.js';
+import { ACTIVE_SENTENCE_CLASS, ACTIVE_WORD_CLASS, SENTENCE_CLASS } from './textWalker.js';
 
 export class Highlighter {
   private words: WordNode[];
   private currentWordIdx = -1;
   private currentSentenceIdx = -1;
 
+  // Suppress auto-scroll for a few seconds after the user manually scrolls
+  private userScrolledAt = 0;
+  private readonly USER_SCROLL_SUPPRESS_MS = 5000;
+  private scrollListener: (() => void) | null = null;
+
   constructor(words: WordNode[]) {
     this.words = words;
+    this.scrollListener = () => {
+      this.userScrolledAt = Date.now();
+    };
+    window.addEventListener('scroll', this.scrollListener, { passive: true, capture: true });
   }
 
   /**
@@ -55,7 +64,7 @@ export class Highlighter {
     this.scrollIntoView(next.span);
   }
 
-  /** Remove all highlights — called on stop/pause */
+  /** Remove all highlights and detach scroll listener — called on stop/pause */
   clearAll(): void {
     if (this.currentWordIdx >= 0 && this.currentWordIdx < this.words.length) {
       this.words[this.currentWordIdx]?.span.classList.remove(ACTIVE_WORD_CLASS);
@@ -68,11 +77,19 @@ export class Highlighter {
 
     this.currentWordIdx = -1;
     this.currentSentenceIdx = -1;
+    this.detachScrollListener();
   }
 
   /** Reset to beginning without touching DOM */
   reset(): void {
     this.clearAll();
+  }
+
+  private detachScrollListener(): void {
+    if (this.scrollListener) {
+      window.removeEventListener('scroll', this.scrollListener, { capture: true });
+      this.scrollListener = null;
+    }
   }
 
   private findSentenceSpan(wordSpan: HTMLElement | null): HTMLElement | null {
@@ -87,6 +104,16 @@ export class Highlighter {
 
   private scrollIntoView(el: HTMLElement): void {
     try {
+      // Don't scroll if the user has manually scrolled recently
+      if (Date.now() - this.userScrolledAt < this.USER_SCROLL_SUPPRESS_MS) return;
+
+      // Don't scroll if the element is already fully visible in the viewport
+      const rect = el.getBoundingClientRect();
+      const inView =
+        rect.top >= 0 &&
+        rect.bottom <= (window.innerHeight || document.documentElement.clientHeight);
+      if (inView) return;
+
       el.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'nearest' });
     } catch {
       // scrollIntoView can throw in some browser contexts — fail silently

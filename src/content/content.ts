@@ -8,7 +8,7 @@ import type { PlaybackState } from '../shared/types.js';
 import { DEFAULT_STATE } from '../shared/types.js';
 import type { ToolbarState } from './floatingToolbar.js';
 import { FloatingToolbar } from './floatingToolbar.js';
-import { applyTheme, DEFAULT_THEME_ID } from './highlightTheme.js';
+import { applyTheme, DEFAULT_THEME_ID, removeTheme } from './highlightTheme.js';
 import type { WalkResult } from './textWalker.js';
 import { HOVER_WORD_CLASS, walkPage, walkSelection, WORD_CLASS } from './textWalker.js';
 import { getVoices, TTS } from './tts.js';
@@ -65,6 +65,10 @@ function createToolbar(): FloatingToolbar {
         LOG('toolbar onStop');
         stopReading();
       },
+      onClose: () => {
+        LOG('toolbar onClose — full teardown');
+        teardown();
+      },
       onVoiceChange: async (voiceName) => {
         LOG('voiceChange:', voiceName);
         state.voiceName = voiceName;
@@ -73,17 +77,17 @@ function createToolbar(): FloatingToolbar {
       },
       onSpeedChange: async (rate) => {
         state.rate = rate;
-        tts?.updateOptions({ rate });
+        tts?.updateOptionsAndRestart({ rate });
         await chrome.storage.sync.set({ rate });
       },
       onPitchChange: async (pitch) => {
         state.pitch = pitch;
-        tts?.updateOptions({ pitch });
+        tts?.updateOptionsAndRestart({ pitch });
         await chrome.storage.sync.set({ pitch });
       },
       onVolumeChange: async (volume) => {
         state.volume = volume;
-        tts?.updateOptions({ volume });
+        tts?.updateOptionsAndRestart({ volume });
         await chrome.storage.sync.set({ volume });
       },
       onModeChange: async (mode) => {
@@ -358,10 +362,20 @@ function disableClickToRead(): void {
 
 function onHover(e: MouseEvent): void {
   if (!hoverBorderEnabled) return;
-  (e.target as Element).closest(CLICKABLE)?.classList.add('spokn-clickable-hover');
+  const next = (e.target as Element).closest(CLICKABLE);
+  // Remove from any previously highlighted element that isn't the new target
+  document.querySelectorAll('.spokn-clickable-hover').forEach(el => {
+    if (el !== next) el.classList.remove('spokn-clickable-hover');
+  });
+  next?.classList.add('spokn-clickable-hover');
 }
 function onHoverOut(e: MouseEvent): void {
-  (e.target as Element).classList.remove('spokn-clickable-hover');
+  // Only clear if the mouse is leaving to somewhere outside the highlighted element
+  const related = (e as MouseEvent).relatedTarget as Element | null;
+  const highlighted = (e.target as Element).closest(CLICKABLE) as Element | null;
+  if (highlighted && (!related || !highlighted.contains(related))) {
+    highlighted.classList.remove('spokn-clickable-hover');
+  }
 }
 function onClickRead(e: MouseEvent): void {
   if ((e.target as Element).closest('#spokn-host')) return;
@@ -377,6 +391,67 @@ function onClickRead(e: MouseEvent): void {
   startReading('page', el as Element).catch(ex => ERR('click-to-read threw:', ex));
 }
 
+// ─── Toolbar teardown ─────────────────────────────────────────────────────────
+
+/** Full cleanup of everything the extension has added to the page. */
+function teardown(): void {
+  LOG('teardown()');
+
+  // Grab local ref before nulling, so unmount always runs even if something throws
+  const t = toolbar;
+  toolbar = null;
+
+  // 1. Stop speech
+  try { tts?.stop(); } catch { /* ignore */ }
+  tts = null;
+
+  // 2. Remove all event listeners
+  disableClickToRead();
+  disableWordHover();
+
+  // 3. Restore DOM — remove all spokn word/sentence spans
+  try {
+    if (walkResult) {
+      walkResult.restore();
+    } else {
+      // Fallback: brute-force remove any leftover spans
+      document.querySelectorAll('.spokn-sentence').forEach(el => {
+        const parent = el.parentNode;
+        if (!parent) return;
+        parent.replaceChild(document.createTextNode(el.textContent ?? ''), el);
+      });
+      document.querySelectorAll('.spokn-word').forEach(el => {
+        const parent = el.parentNode;
+        if (!parent) return;
+        parent.replaceChild(document.createTextNode(el.textContent ?? ''), el);
+      });
+    }
+  } catch (e) {
+    ERR('teardown: DOM restore failed:', e);
+  }
+  walkResult = null;
+
+  // 4. Remove any lingering class decorations
+  document.querySelectorAll('.spokn-clickable-hover, .spokn-word-hover, .spokn-word-active, .spokn-sentence-active')
+    .forEach(el => el.classList.remove('spokn-clickable-hover', 'spokn-word-hover', 'spokn-word-active', 'spokn-sentence-active'));
+
+  // 5. Remove injected <style> tag for highlight theme
+  removeTheme();
+
+  // 6. Reset playback state
+  state = {
+    ...DEFAULT_STATE,
+    voiceName: state.voiceName,
+    rate:   state.rate,
+    pitch:  state.pitch,
+    volume: state.volume,
+    mode:   state.mode,
+  };
+
+  // 7. Unmount toolbar UI — always runs because we grabbed the ref first
+  t?.unmount();
+}
+
 // ─── Toolbar toggle ───────────────────────────────────────────────────────────
 
 function toggleToolbar(): void {
@@ -384,13 +459,7 @@ function toggleToolbar(): void {
   if (toolbarMounting) return;
 
   if (toolbar?.isVisible()) {
-    stopReading();
-    disableClickToRead();
-    disableWordHover();
-    walkResult?.restore();
-    walkResult = null;
-    toolbar.unmount();
-    toolbar = null;
+    teardown();
     return;
   }
 
@@ -408,6 +477,8 @@ function toggleToolbar(): void {
         ERR('initial walkPage failed:', e);
       }
     }
+    // Re-apply theme since teardown removed the style tag
+    applyTheme(currentTheme);
     LOG('toolbar mounted');
   } catch (e) {
     ERR('toolbar mount failed:', e);
@@ -480,6 +551,7 @@ chrome.runtime.onMessage.addListener(
           case 'STOP':
             stopReading();
             disableClickToRead();
+            disableWordHover();
             sendResponse({ success: true } satisfies MessageResponse);
             break;
 
