@@ -47,6 +47,17 @@
   cursor: pointer !important;
 }
 
+/* ── Word hover highlight ────────────────────────────────────────────────── */
+.spokn-word-hover {
+  background-color: var(--spokn-word-bg) !important;
+  color: var(--spokn-word-color) !important;
+  border-radius: 3px;
+  padding: 1px 2px;
+  margin: -1px -2px;
+  cursor: default;
+  transition: background-color 0.1s ease;
+}
+
 /* ── Word entrance animation ─────────────────────────────────────────────── */
 @keyframes spokn-word-in {
   from { background-color: color-mix(in srgb, var(--spokn-word-bg) 40%, transparent); }

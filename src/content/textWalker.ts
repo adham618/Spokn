@@ -28,6 +28,7 @@ const SKIP_TAGS = new Set([
 /** spokn- prefixed class so we never clash with host page styles */
 export const WORD_CLASS = 'spokn-word';
 export const ACTIVE_WORD_CLASS = 'spokn-word-active';
+export const HOVER_WORD_CLASS = 'spokn-word-hover';
 export const SENTENCE_CLASS = 'spokn-sentence';
 export const ACTIVE_SENTENCE_CLASS = 'spokn-sentence-active';
 

@@ -10,7 +10,7 @@ import type { ToolbarState } from './floatingToolbar.js';
 import { FloatingToolbar } from './floatingToolbar.js';
 import { applyTheme, DEFAULT_THEME_ID } from './highlightTheme.js';
 import type { WalkResult } from './textWalker.js';
-import { walkPage, walkSelection } from './textWalker.js';
+import { HOVER_WORD_CLASS, walkPage, walkSelection, WORD_CLASS } from './textWalker.js';
 import { getVoices, TTS } from './tts.js';
 
 const LOG = import.meta.env.DEV ? (...args: unknown[]) => console.log('[Spokn]', ...args) : () => {};
@@ -25,6 +25,7 @@ let clickToReadEnabled = false;
 let state: PlaybackState = { ...DEFAULT_STATE };
 let toolbarMounting = false;
 let currentTheme = DEFAULT_THEME_ID;
+let hoverBorderEnabled = true;
 
 // ─── Toolbar factory ──────────────────────────────────────────────────────────
 
@@ -41,6 +42,7 @@ function buildToolbarState(): ToolbarState {
     wordIndex: state.wordIndex,
     totalWords: state.totalWords,
     highlightTheme: currentTheme,
+    hoverBorderEnabled,
   };
 }
 
@@ -95,6 +97,15 @@ function createToolbar(): FloatingToolbar {
         applyTheme(themeId);
         await chrome.storage.sync.set({ highlightTheme: themeId });
       },
+      onHoverBorderToggle: async (enabled) => {
+        LOG('hoverBorderToggle:', enabled);
+        hoverBorderEnabled = enabled;
+        if (!enabled) {
+          document.querySelectorAll('.spokn-clickable-hover')
+            .forEach(el => el.classList.remove('spokn-clickable-hover'));
+        }
+        await chrome.storage.sync.set({ hoverBorderEnabled: enabled });
+      },
     },
     buildToolbarState(),
   );
@@ -120,24 +131,29 @@ async function startReading(
 ): Promise<void> {
   LOG('startReading() — mode:', mode, fromElement ? 'from element' : '');
 
-  // Clean up any previous session
+  // Clean up any previous TTS session
   if (tts) {
     tts.stop();
     tts = null;
   }
-  walkResult?.restore();
-  walkResult = null;
 
-  // Walk DOM
+  // Walk DOM — reuse existing walkResult if already walked (e.g. from toolbar open)
   try {
     if (mode === 'selection') {
+      // Selection always needs a fresh walk
+      walkResult?.restore();
+      walkResult = null;
       const sel = window.getSelection();
       LOG('selection:', sel?.toString().slice(0, 60));
       walkResult = walkSelection();
-    } else {
+    } else if (!walkResult) {
+      // Page walk not done yet
       const all = walkPage();
       LOG('walkPage words:', all.words.length);
       walkResult = fromElement ? sliceFrom(all, fromElement) : all;
+    } else if (fromElement) {
+      // Re-slice existing walk from click target
+      walkResult = sliceFrom(walkResult, fromElement);
     }
   } catch (e) {
     ERR('DOM walk failed:', e);
@@ -156,6 +172,9 @@ async function startReading(
   }
 
   LOG('words to speak:', walkResult.words.length, '— first:', walkResult.words[0]?.word);
+
+  // Enable hover highlight now that word spans are in the DOM
+  enableWordHover();
 
   // Check speechSynthesis is available
   if (typeof speechSynthesis === 'undefined') {
@@ -214,8 +233,7 @@ async function startReading(
       case 'end':
         LOG('TTS', event.type);
         setState({ status: 'stopped', currentWord: '', wordIndex: 0, currentSentence: '' });
-        walkResult?.restore();
-        walkResult = null;
+        // Keep spans in DOM so hover still works — restore happens on toolbar close
         tts = null;
         break;
     }
@@ -233,8 +251,7 @@ function stopReading(): void {
   LOG('stopReading()');
   tts?.stop();
   tts = null;
-  walkResult?.restore();
-  walkResult = null;
+  // Don't restore spans here — hover should still work while toolbar is open
   state = {
     ...DEFAULT_STATE,
     voiceName: state.voiceName,
@@ -282,6 +299,41 @@ function sliceFrom(all: WalkResult, from: Element): WalkResult {
   };
 }
 
+// ─── Word hover highlight ─────────────────────────────────────────────────────
+
+let wordHoverEnabled = false;
+
+function onWordMouseOver(e: MouseEvent): void {
+  const target = e.target as Element;
+  if (target.classList.contains(WORD_CLASS)) {
+    target.classList.add(HOVER_WORD_CLASS);
+  }
+}
+
+function onWordMouseOut(e: MouseEvent): void {
+  const target = e.target as Element;
+  if (target.classList.contains(WORD_CLASS)) {
+    target.classList.remove(HOVER_WORD_CLASS);
+  }
+}
+
+function enableWordHover(): void {
+  if (wordHoverEnabled) return;
+  wordHoverEnabled = true;
+  document.addEventListener('mouseover', onWordMouseOver);
+  document.addEventListener('mouseout', onWordMouseOut);
+}
+
+function disableWordHover(): void {
+  if (!wordHoverEnabled) return;
+  wordHoverEnabled = false;
+  document.removeEventListener('mouseover', onWordMouseOver);
+  document.removeEventListener('mouseout', onWordMouseOut);
+  // Clean up any lingering hover class
+  document.querySelectorAll(`.${HOVER_WORD_CLASS}`)
+    .forEach(el => el.classList.remove(HOVER_WORD_CLASS));
+}
+
 // ─── Click-to-read ────────────────────────────────────────────────────────────
 
 const CLICKABLE = 'p,h1,h2,h3,h4,h5,h6,li,blockquote,td,th,article,section,main';
@@ -305,6 +357,7 @@ function disableClickToRead(): void {
 }
 
 function onHover(e: MouseEvent): void {
+  if (!hoverBorderEnabled) return;
   (e.target as Element).closest(CLICKABLE)?.classList.add('spokn-clickable-hover');
 }
 function onHoverOut(e: MouseEvent): void {
@@ -333,6 +386,9 @@ function toggleToolbar(): void {
   if (toolbar?.isVisible()) {
     stopReading();
     disableClickToRead();
+    disableWordHover();
+    walkResult?.restore();
+    walkResult = null;
     toolbar.unmount();
     toolbar = null;
     return;
@@ -342,9 +398,16 @@ function toggleToolbar(): void {
   try {
     toolbar = createToolbar();
     toolbar.mount();
-    // Always enable click-to-read when toolbar is open —
-    // clicking any paragraph starts/jumps reading from that point
     enableClickToRead();
+    // Walk page immediately so hover highlight works before TTS starts
+    if (!walkResult && state.mode !== 'selection') {
+      try {
+        walkResult = walkPage();
+        enableWordHover();
+      } catch (e) {
+        ERR('initial walkPage failed:', e);
+      }
+    }
     LOG('toolbar mounted');
   } catch (e) {
     ERR('toolbar mount failed:', e);
@@ -475,12 +538,13 @@ chrome.runtime.onMessage.addListener(
 
 (async () => {
   try {
-    const stored = await chrome.storage.sync.get(['voiceName', 'rate', 'pitch', 'volume', 'mode', 'highlightTheme']);
+    const stored = await chrome.storage.sync.get(['voiceName', 'rate', 'pitch', 'volume', 'mode', 'highlightTheme', 'hoverBorderEnabled']);
     if (stored.voiceName) state.voiceName = stored.voiceName as string;
     if (stored.rate   != null) state.rate   = stored.rate   as number;
     if (stored.pitch  != null) state.pitch  = stored.pitch  as number;
     if (stored.volume != null) state.volume = stored.volume as number;
     if (stored.mode)           state.mode   = stored.mode   as typeof state.mode;
+    if (stored.hoverBorderEnabled != null) hoverBorderEnabled = stored.hoverBorderEnabled as boolean;
     if (stored.highlightTheme) {
       currentTheme = stored.highlightTheme as string;
       applyTheme(currentTheme);

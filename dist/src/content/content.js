@@ -117,9 +117,9 @@
     play: `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" aria-hidden="true" viewBox="0.89 0.89 14.17 14.23"><path fill="currentColor" d="M 8,0.88671875 C 4.0832548,0.88671875 0.88671875,4.0832548 0.88671875,8 C 0.88671881,11.916745 4.0832548,15.113281 8,15.113281 c 1.9370568,0 3.674673,-0.793691 4.941406,-2.064453 v -0.002 c 0.177377,-0.175751 0.343653,-0.361313 0.501953,-0.554687 c 0.01459,-0.01807 0.02855,-0.03648 0.04297,-0.05469 c 0.16478,-0.205303 0.315402,-0.421643 0.457031,-0.644531 c 0.0067,-0.01075 0.0148,-0.02046 0.02149,-0.03125 v -0.0039 C 14.650217,10.665341 15.054688,9.3797667 15.054688,8 c 0,-1.3797667 -0.404471,-2.6653405 -1.089844,-3.7578125 v -0.00391 c -0.0067,-0.010785 -0.01475,-0.020503 -0.02149,-0.03125 C 13.80173,3.9841434 13.651108,3.7678028 13.486328,3.5625 C 13.471912,3.5442884 13.457947,3.5258787 13.443359,3.5078125 C 13.285059,3.314438 13.118783,3.128876 12.941406,2.953125 C 11.674593,1.6817746 9.9375455,0.88671878 8,0.88671875 Z M 6.9414062,5.4003906 a 1.0001,1.0001 0 0 1 0.00977,0 a 1.0001,1.0001 0 0 1 0.5625,0.1425782 l 2.6679691,1.5996093 a 1.0001,1.0001 0 0 1 0,1.7148438 L 7.5136719,10.457031 A 1.0001,1.0001 0 0 1 6,9.5996094 V 6.4003906 a 1.0001,1.0001 0 0 1 0.9414062,-1 Z"/></svg>`,
     pause: `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" aria-hidden="true" viewBox="1.59 1.07 5.29 6.35"><g transform="translate(-110.41692,-114.44801)"><path fill="currentColor" d="M 115.97265 115.51358 C 115.53748 115.51358 115.17994 115.87165 115.17994 116.30681 L 115.17994 121.07034 C 115.17994 121.5055 115.53748 121.86306 115.97265 121.86306 L 116.50182 121.86306 C 116.93699 121.86306 117.29711 121.5055 117.29712 121.07034 L 117.29712 116.30681 C 117.29712 115.87165 116.93699 115.51358 116.50182 115.51358 L 115.97265 115.51358 Z" stroke="none"/><path fill="currentColor" d="M 112.79869 115.51358 C 112.36353 115.51358 112.0039 115.87165 112.0039 116.30681 L 112.0039 121.07034 C 112.0039 121.5055 112.36353 121.86306 112.79869 121.86306 L 113.32837 121.86306 C 113.76353 121.86306 114.12109 121.5055 114.12109 121.07034 L 114.12109 116.30681 C 114.12109 115.87165 113.76353 115.51358 113.32837 115.51358 L 112.79869 115.51358 Z" stroke="none"/></g></svg>`,
     stop: `<svg ${SVG_ATTRS}><rect x="3" y="3" width="18" height="18" rx="2"/></svg>`,
-    settings: `<svg  ${SVG_ATTRS} xmlns="http://www.w3.org/2000/svg" width="16" height="16" aria-hidden="true" viewBox="12.46 9.38 75.08 81.25"><path fill="currentColor" fill-rule="evenodd" d="m52.281 9.3906c4.8906 0.27344 9.0742 3.6289 10.398 8.3477 0.09375 0.32422 0.17187 0.67578 0.27344 1.1406 0.16016 0.71484 0.20703 0.92578 0.25 1.0664 0.78125 2.6641 3.5195 4.2461 6.2188 3.5938 0.14453-0.035156 0.35156-0.097656 1.0508-0.31641 0.45703-0.14453 0.80469-0.25391 1.1328-0.33984 4.7461-1.207 9.7422 0.73438 12.422 4.8359 0.18359 0.28125 0.36719 0.60156 0.60547 1.0156l1.1016 1.9102c0.23828 0.41016 0.41797 0.72656 0.57031 1.0234 2.2148 4.375 1.4023 9.6758-2.0273 13.184-0.23438 0.24219-0.5 0.48438-0.85156 0.80859-0.53906 0.49219-0.69531 0.63672-0.79688 0.74219-1.918 2.0117-1.918 5.1758 0 7.1875 0.10156 0.10547 0.25391 0.25 0.79688 0.74609 0.35156 0.32422 0.62109 0.57422 0.85547 0.81641 3.4219 3.5039 4.2383 8.8008 2.0273 13.172-0.15234 0.30078-0.33203 0.61719-0.57422 1.0312l-1.1016 1.9102c-0.23828 0.41406-0.42187 0.73047-0.60547 1.0117-2.6836 4.1055-7.6797 6.0469-12.426 4.8359-0.32812-0.085937-0.67187-0.19531-1.1289-0.33984-0.69922-0.21875-0.90625-0.28125-1.0508-0.31641-2.6992-0.65234-5.4375 0.92969-6.2188 3.5938-0.042969 0.14062-0.089844 0.34766-0.25 1.0664-0.10547 0.46484-0.17969 0.82031-0.27344 1.1445-1.3242 4.7188-5.5078 8.0742-10.398 8.3477-0.33594 0.019531-0.69922 0.015625-1.1758 0.015625h-2.207c-0.47656 0-0.84375 0.003906-1.1797-0.015625-4.8906-0.27344-9.0703-3.625-10.395-8.3438-0.09375-0.32422-0.17188-0.67969-0.27344-1.1484-0.16016-0.71875-0.21094-0.92578-0.25391-1.0664-0.78516-2.6641-3.5195-4.2461-6.2227-3.5938-0.14453 0.035157-0.34375 0.097657-1.043 0.31641-0.45703 0.14453-0.80078 0.25391-1.1289 0.33984-4.75 1.2109-9.75-0.73047-12.43-4.8359-0.18359-0.28125-0.36328-0.59375-0.60156-1.0078l-1.1055-1.9141c-0.23828-0.41406-0.42188-0.73047-0.57422-1.0312-2.2109-4.3711-1.3984-9.6641 2.0195-13.168 0.23828-0.24219 0.50781-0.49219 0.86328-0.82031 0.54297-0.49609 0.69922-0.64063 0.80078-0.74609 1.9141-2.0117 1.9141-5.1719 0-7.1836-0.10156-0.10547-0.25781-0.25-0.80078-0.74609-0.35156-0.32422-0.61719-0.57031-0.85547-0.8125-3.4219-3.5078-4.2383-8.8008-2.0234-13.176 0.15234-0.30078 0.33203-0.61328 0.57031-1.0273l1.1055-1.9141c0.23828-0.41406 0.42188-0.73047 0.60547-1.0117 2.6797-4.1016 7.6758-6.043 12.422-4.8359 0.32812 0.085938 0.67578 0.19531 1.1328 0.33984 0.69922 0.21875 0.90234 0.28125 1.0508 0.31641 2.6953 0.65234 5.4297-0.92969 6.2148-3.5898 0.042969-0.14062 0.09375-0.35156 0.25391-1.0703 0.10156-0.46484 0.17969-0.82031 0.27344-1.1445 1.3242-4.7188 5.5039-8.0703 10.395-8.3438 0.33594-0.019531 0.70312-0.015625 1.1797-0.015625h2.207c0.47656 0 0.83984-0.003906 1.1758 0.015625zm-2.2812 28.109c-6.9023 0-12.5 5.5977-12.5 12.5s5.5977 12.5 12.5 12.5c6.9062 0 12.5-5.5977 12.5-12.5s-5.5977-12.5-12.5-12.5z"/></svg>`,
+    settings: `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 15.5A3.5 3.5 0 0 1 8.5 12 3.5 3.5 0 0 1 12 8.5a3.5 3.5 0 0 1 3.5 3.5 3.5 3.5 0 0 1-3.5 3.5m7.43-2.92c.04-.34.07-.68.07-1.08s-.03-.73-.07-1.08l2.32-1.81c.21-.16.27-.46.13-.7l-2.2-3.81c-.14-.24-.42-.32-.66-.24l-2.74 1.11c-.57-.44-1.18-.81-1.86-1.08L14.99 2.42C14.96 2.18 14.75 2 14.5 2h-4.4c-.25 0-.46.18-.49.42l-.38 2.47c-.68.27-1.3.64-1.86 1.08L4.63 4.86c-.24-.09-.52 0-.66.24L1.77 8.91c-.14.24-.08.54.13.7L4.22 11.42c-.04.35-.07.69-.07 1.08s.03.73.07 1.08l-2.32 1.81c-.21.16-.27.46-.13.7l2.2 3.81c.14.24.42.32.66.24l2.74-1.11c.57.44 1.18.81 1.86 1.08l.38 2.47c.03.24.24.42.49.42h4.4c.25 0 .46-.18.49-.42l.38-2.47c.68-.27 1.3-.64 1.86-1.08l2.74 1.11c.24.09.52 0 .66-.24l2.2-3.81c.14-.24.08-.54-.13-.7l-2.32-1.81Z"/></svg>`,
     close: `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" aria-hidden="true" viewBox="7.67 7.67 16.66 16.66"><path fill="currentColor" d="M23.879 21.22l-5.224-5.221 5.22-5.224c0.602-0.6 0.602-1.565 0.002-2.167l-0.485-0.486c-0.285-0.292-0.675-0.451-1.085-0.451-0.002 0-0.002 0-0.002 0-0.41 0-0.795 0.161-1.083 0.45l-5.222 5.226-5.224-5.22c-0.599-0.6-1.563-0.603-2.165-0.003l-0.486 0.481c-0.293 0.287-0.453 0.677-0.453 1.086 0 0.411 0.161 0.798 0.45 1.086l5.226 5.222-5.221 5.224c-0.602 0.6-0.602 1.565-0.002 2.169l0.485 0.485c0.287 0.292 0.676 0.451 1.086 0.451 0.408 0 0.798-0.163 1.085-0.45l5.221-5.225 5.222 5.219c0.296 0.299 0.69 0.45 1.085 0.45 0.391 0 0.783-0.149 1.082-0.447l0.485-0.484c0.294-0.285 0.453-0.675 0.453-1.085 0.002-0.41-0.159-0.797-0.448-1.086z"/></svg>`,
-    grip: `<svg  ${SVG_ATTRS} xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 256 256"><path d="M104,60A12,12,0,1,1,92,48,12,12,0,0,1,104,60Zm60,12a12,12,0,1,0-12-12A12,12,0,0,0,164,72ZM92,116a12,12,0,1,0,12,12A12,12,0,0,0,92,116Zm72,0a12,12,0,1,0,12,12A12,12,0,0,0,164,116ZM92,184a12,12,0,1,0,12,12A12,12,0,0,0,92,184Zm72,0a12,12,0,1,0,12,12A12,12,0,0,0,164,184Z"/></svg>`,
+    grip: `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="9" cy="6" r="1.5"/><circle cx="15" cy="6" r="1.5"/><circle cx="9" cy="12" r="1.5"/><circle cx="15" cy="12" r="1.5"/><circle cx="9" cy="18" r="1.5"/><circle cx="15" cy="18" r="1.5"/></svg>`,
     chevron: `<svg  ${SVG_ATTRS} xmlns="http://www.w3.org/2000/svg" width="16" height="16" aria-hidden="true" viewBox="19.65 32.2 60.55 36.15"><path fill="currentColor" d="M21.364,42.218l24.329,24.329c0.026,0.027,0.034,0.065,0.061,0.091c1.146,1.146,2.659,1.715,4.17,1.711c1.511,0.004,3.023-0.564,4.17-1.711c0.027-0.027,0.034-0.064,0.061-0.091l24.329-24.329c2.285-2.285,2.285-6.024,0-8.308s-6.024-2.285-8.308,0L49.923,54.161L29.672,33.91c-2.285-2.285-6.024-2.285-8.308,0S19.079,39.934,21.364,42.218z"/></svg>`,
     highlight: `<svg ${SVG_ATTRS}><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>`,
     filetext: `<svg ${SVG_ATTRS}><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>`
@@ -152,9 +152,9 @@
       Object.assign(this.host.style, {
         all: "initial",
         position: "fixed",
-        bottom: "28px",
-        left: "50%",
-        transform: "translateX(-50%)",
+        right: "16px",
+        top: "50%",
+        transform: "translateY(-50%)",
         zIndex: "2147483647",
         pointerEvents: "none",
         fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif'
@@ -166,7 +166,7 @@
         const panel = this.shadow?.getElementById("spokn-panel");
         if (panel) {
           panel.style.opacity = "1";
-          panel.style.transform = "translateY(0)";
+          panel.style.transform = "translateX(0)";
         }
       });
       document.addEventListener("mousemove", this.boundMouseMove, { passive: true });
@@ -189,28 +189,12 @@
     updateState(partial) {
       this.st = { ...this.st, ...partial };
       if (!this.shadow) return;
-      const preview = this.shadow.getElementById("spokn-preview");
-      if (preview) {
-        const text = this.st.currentSentence || this.st.currentWord || "Ready";
-        preview.textContent = text.length > 72 ? text.slice(0, 72) + "…" : text;
-      }
-      const badge = this.shadow.getElementById("spokn-speed-badge");
-      if (badge) badge.textContent = `${this.st.rate.toFixed(1)}x`;
-      const bar = this.shadow.getElementById("spokn-progress-fill");
-      if (bar) {
-        const pct = this.st.totalWords > 0 ? this.st.wordIndex / this.st.totalWords * 100 : 0;
-        bar.style.width = `${pct}%`;
-      }
       const playBtn = this.shadow.getElementById("spokn-playpause");
       if (playBtn) {
         const isPlaying = this.st.status === "playing";
         playBtn.innerHTML = isPlaying ? ICONS.pause : ICONS.play;
         playBtn.setAttribute("aria-label", isPlaying ? "Pause" : "Play");
         playBtn.setAttribute("title", isPlaying ? "Pause" : "Play");
-      }
-      const dot = this.shadow.getElementById("spokn-status-dot");
-      if (dot) {
-        dot.style.background = this.st.status === "playing" ? "#22c55e" : this.st.status === "paused" ? "#f59e0b" : "#475569";
       }
       const stopBtn = this.shadow.getElementById("spokn-stop");
       if (stopBtn) stopBtn.disabled = this.st.status === "stopped";
@@ -240,27 +224,14 @@
     html() {
       const { rate, pitch, volume, mode, status } = this.st;
       const isPlaying = status === "playing";
-      const preview = this.st.currentSentence || this.st.currentWord || "Ready";
-      const previewText = preview.length > 72 ? preview.slice(0, 72) + "…" : preview;
-      const dotColor = isPlaying ? "#22c55e" : status === "paused" ? "#f59e0b" : "#475569";
       const speedPct = (rate - 0.5) / 2.5 * 100;
       const pitchPct = (pitch - 0.5) / 1.5 * 100;
       const volPct = volume * 100;
       const modeIcon = (m) => m === "selection" ? ICONS.highlight : ICONS.filetext;
       const modeLabel = (m) => m === "selection" ? "Selection" : "Full Page";
       return `
-      <div id="spokn-progress-bar" role="progressbar" aria-label="Reading progress">
-        <div id="spokn-progress-fill" style="width:0%"></div>
-      </div>
-
       <div id="spokn-toolbar">
         <div id="spokn-drag" title="Drag to move" aria-hidden="true">${ICONS.grip}</div>
-
-        <span id="spokn-status-dot" style="background:${dotColor}" aria-hidden="true"></span>
-
-        <span id="spokn-preview">${previewText}</span>
-
-        <span id="spokn-speed-badge">${rate.toFixed(1)}x</span>
 
         <button id="spokn-playpause" class="btn btn-play"
           aria-label="${isPlaying ? "Pause" : "Play"}"
@@ -357,6 +328,17 @@
           </div>
         </div>
 
+        <div class="settings-row">
+          <span class="settings-label">Border</span>
+          <label class="toggle-wrap" title="Show hover border around paragraphs when hovering">
+            <input type="checkbox" id="spokn-hover-border-toggle"
+              ${this.st.hoverBorderEnabled ? "checked" : ""}
+              aria-label="Show hover border">
+            <span class="toggle-track"><span class="toggle-thumb"></span></span>
+            <span class="toggle-label">Paragraph hover border</span>
+          </label>
+        </div>
+
         <div id="spokn-shortcuts">
           <div class="shortcut-row">
             <span class="shortcut-keys"><kbd>Alt</kbd><kbd>Shift</kbd><kbd>P</kbd></span>
@@ -437,11 +419,14 @@
           this.cb.onThemeChange(themeId);
         });
       });
+      s.getElementById("spokn-hover-border-toggle")?.addEventListener("change", (e) => {
+        const enabled = e.target.checked;
+        this.st.hoverBorderEnabled = enabled;
+        this.cb.onHoverBorderToggle(enabled);
+      });
       this.attachSlider("spokn-speed-slider", 0.5, 3, (v) => {
         const r = Math.round(v * 10) / 10;
         this.st.rate = r;
-        const badge = s.getElementById("spokn-speed-badge");
-        if (badge) badge.textContent = `${r.toFixed(1)}x`;
         const val = s.querySelector("#spokn-speed-slider + .slider-val");
         if (val) val.textContent = `${r.toFixed(1)}x`;
         this.cb.onSpeedChange(r);
@@ -471,7 +456,7 @@
           Object.assign(this.host.style, {
             left: `${rect.left}px`,
             top: `${rect.top}px`,
-            bottom: "auto",
+            right: "auto",
             transform: "none"
           });
         }
@@ -575,39 +560,26 @@
       #spokn-panel {
         pointer-events: auto;
         background: #0a0a0f;
-        border-radius: 20px;
+        border-radius: 16px;
         border: 1px solid rgba(39,103,183,0.35);
         box-shadow: 0 12px 40px rgba(0,0,0,0.55), 0 2px 8px rgba(0,0,0,0.3);
         font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
         font-size: 13px;
         color: #f1f5f9;
-        min-width: 340px;
-        max-width: 400px;
         overflow: hidden;
         opacity: 0;
-        transform: translateY(14px);
+        transform: translateX(20px);
         transition: opacity 0.2s ease, transform 0.2s ease;
         user-select: none;
       }
 
-      /* Progress */
-      #spokn-progress-bar {
-        height: 3px;
-        background: rgba(255,255,255,0.08);
-        overflow: hidden;
-      }
-      #spokn-progress-fill {
-        height: 100%;
-        background: linear-gradient(90deg, #2767B7, #5b8fd4);
-        transition: width 0.25s ease;
-      }
-
-      /* Toolbar row */
+      /* Toolbar column */
       #spokn-toolbar {
         display: flex;
+        flex-direction: column;
         align-items: center;
-        gap: 4px;
-        padding: 8px 12px;
+        gap: 2px;
+        padding: 8px 6px;
       }
 
       #spokn-drag {
@@ -619,42 +591,10 @@
         align-items: center;
         border-radius: 6px;
         transition: color 0.12s;
+        margin-bottom: 2px;
       }
       #spokn-drag:hover  { color: #6b7280; }
       #spokn-drag:active { cursor: grabbing; }
-
-      #spokn-status-dot {
-        width: 6px;
-        height: 6px;
-        border-radius: 50%;
-        flex-shrink: 0;
-        transition: background 0.2s;
-        margin: 0 2px;
-      }
-
-      #spokn-preview {
-        flex: 1;
-        overflow: hidden;
-        white-space: nowrap;
-        text-overflow: ellipsis;
-        font-size: 12px;
-        color: #94a3b8;
-        min-width: 0;
-        margin: 0 4px;
-      }
-
-      #spokn-speed-badge {
-        font-size: 10px;
-        font-weight: 700;
-        color: #2767B7;
-        background: rgba(39,103,183,0.15);
-        padding: 2px 6px;
-        border-radius: 20px;
-        flex-shrink: 0;
-        min-width: 32px;
-        text-align: center;
-        letter-spacing: 0.02em;
-      }
 
       /* Buttons */
       .btn {
@@ -695,13 +635,15 @@
 
       .btn-close:hover { background: rgba(239,68,68,0.15); color: #f87171; }
 
-      /* Settings panel */
+      /* Settings panel — opens to the left */
       #spokn-settings {
         border-top: 1px solid rgba(255,255,255,0.06);
         padding: 12px 14px 14px;
         flex-direction: column;
         gap: 10px;
         background: rgba(0,0,0,0.15);
+        min-width: 260px;
+        max-width: 300px;
       }
 
       .settings-row {
@@ -909,6 +851,54 @@
         text-align: right;
       }
 
+      /* Toggle switch */
+      .toggle-wrap {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        cursor: pointer;
+        flex: 1;
+      }
+      .toggle-wrap input[type=checkbox] {
+        position: absolute;
+        opacity: 0;
+        width: 0;
+        height: 0;
+      }
+      .toggle-track {
+        position: relative;
+        width: 28px;
+        height: 16px;
+        background: rgba(255,255,255,0.1);
+        border-radius: 99px;
+        flex-shrink: 0;
+        transition: background 0.15s;
+        border: 1px solid rgba(255,255,255,0.08);
+      }
+      .toggle-wrap input:checked + .toggle-track {
+        background: #2767B7;
+        border-color: #2767B7;
+      }
+      .toggle-thumb {
+        position: absolute;
+        top: 2px;
+        left: 2px;
+        width: 10px;
+        height: 10px;
+        border-radius: 50%;
+        background: #fff;
+        transition: transform 0.15s;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.4);
+      }
+      .toggle-wrap input:checked ~ .toggle-track .toggle-thumb,
+      .toggle-wrap input:checked + .toggle-track .toggle-thumb {
+        transform: translateX(12px);
+      }
+      .toggle-label {
+        font-size: 11px;
+        color: #94a3b8;
+      }
+
       /* Ko-fi */
       #spokn-kofi {
         display: flex;
@@ -977,6 +967,7 @@
   ]);
   const WORD_CLASS = "spokn-word";
   const ACTIVE_WORD_CLASS = "spokn-word-active";
+  const HOVER_WORD_CLASS = "spokn-word-hover";
   const SENTENCE_CLASS = "spokn-sentence";
   const ACTIVE_SENTENCE_CLASS = "spokn-sentence-active";
   function splitIntoSentences(text) {
@@ -1414,6 +1405,7 @@
   let state = { ...DEFAULT_STATE };
   let toolbarMounting = false;
   let currentTheme = DEFAULT_THEME_ID;
+  let hoverBorderEnabled = true;
   function buildToolbarState() {
     return {
       status: state.status,
@@ -1426,7 +1418,8 @@
       currentWord: state.currentWord,
       wordIndex: state.wordIndex,
       totalWords: state.totalWords,
-      highlightTheme: currentTheme
+      highlightTheme: currentTheme,
+      hoverBorderEnabled
     };
   }
   function createToolbar() {
@@ -1477,6 +1470,13 @@
           currentTheme = themeId;
           applyTheme(themeId);
           await chrome.storage.sync.set({ highlightTheme: themeId });
+        },
+        onHoverBorderToggle: async (enabled) => {
+          hoverBorderEnabled = enabled;
+          if (!enabled) {
+            document.querySelectorAll(".spokn-clickable-hover").forEach((el) => el.classList.remove("spokn-clickable-hover"));
+          }
+          await chrome.storage.sync.set({ hoverBorderEnabled: enabled });
         }
       },
       buildToolbarState()
@@ -1496,17 +1496,19 @@
       tts.stop();
       tts = null;
     }
-    walkResult?.restore();
-    walkResult = null;
     try {
       if (mode === "selection") {
+        walkResult?.restore();
+        walkResult = null;
         const sel = window.getSelection();
         LOG("selection:", sel?.toString().slice(0, 60));
         walkResult = walkSelection();
-      } else {
+      } else if (!walkResult) {
         const all = walkPage();
         LOG("walkPage words:", all.words.length);
         walkResult = fromElement ? sliceFrom(all, fromElement) : all;
+      } else if (fromElement) {
+        walkResult = sliceFrom(walkResult, fromElement);
       }
     } catch (e) {
       ERR("DOM walk failed:", e);
@@ -1523,6 +1525,7 @@
       return;
     }
     LOG("words to speak:", walkResult.words.length, "— first:", walkResult.words[0]?.word);
+    enableWordHover();
     if (typeof speechSynthesis === "undefined") {
       ERR("speechSynthesis not available on this page");
       showToolbarError("Speech not available on this page.");
@@ -1571,8 +1574,6 @@
         case "end":
           LOG("TTS", event.type);
           setState({ status: "stopped", currentWord: "", wordIndex: 0, currentSentence: "" });
-          walkResult?.restore();
-          walkResult = null;
           tts = null;
           break;
       }
@@ -1587,8 +1588,6 @@
   function stopReading() {
     tts?.stop();
     tts = null;
-    walkResult?.restore();
-    walkResult = null;
     state = {
       ...DEFAULT_STATE,
       voiceName: state.voiceName,
@@ -1631,6 +1630,32 @@
       restore: all.restore
     };
   }
+  let wordHoverEnabled = false;
+  function onWordMouseOver(e) {
+    const target = e.target;
+    if (target.classList.contains(WORD_CLASS)) {
+      target.classList.add(HOVER_WORD_CLASS);
+    }
+  }
+  function onWordMouseOut(e) {
+    const target = e.target;
+    if (target.classList.contains(WORD_CLASS)) {
+      target.classList.remove(HOVER_WORD_CLASS);
+    }
+  }
+  function enableWordHover() {
+    if (wordHoverEnabled) return;
+    wordHoverEnabled = true;
+    document.addEventListener("mouseover", onWordMouseOver);
+    document.addEventListener("mouseout", onWordMouseOut);
+  }
+  function disableWordHover() {
+    if (!wordHoverEnabled) return;
+    wordHoverEnabled = false;
+    document.removeEventListener("mouseover", onWordMouseOver);
+    document.removeEventListener("mouseout", onWordMouseOut);
+    document.querySelectorAll(`.${HOVER_WORD_CLASS}`).forEach((el) => el.classList.remove(HOVER_WORD_CLASS));
+  }
   const CLICKABLE = "p,h1,h2,h3,h4,h5,h6,li,blockquote,td,th,article,section,main";
   function enableClickToRead() {
     if (clickToReadEnabled) return;
@@ -1648,6 +1673,7 @@
     document.querySelectorAll(".spokn-clickable-hover").forEach((el) => el.classList.remove("spokn-clickable-hover"));
   }
   function onHover(e) {
+    if (!hoverBorderEnabled) return;
     e.target.closest(CLICKABLE)?.classList.add("spokn-clickable-hover");
   }
   function onHoverOut(e) {
@@ -1669,6 +1695,9 @@
     if (toolbar?.isVisible()) {
       stopReading();
       disableClickToRead();
+      disableWordHover();
+      walkResult?.restore();
+      walkResult = null;
       toolbar.unmount();
       toolbar = null;
       return;
@@ -1678,6 +1707,14 @@
       toolbar = createToolbar();
       toolbar.mount();
       enableClickToRead();
+      if (!walkResult && state.mode !== "selection") {
+        try {
+          walkResult = walkPage();
+          enableWordHover();
+        } catch (e) {
+          ERR("initial walkPage failed:", e);
+        }
+      }
       LOG("toolbar mounted");
     } catch (e) {
       ERR("toolbar mount failed:", e);
@@ -1785,12 +1822,13 @@
   );
   (async () => {
     try {
-      const stored = await chrome.storage.sync.get(["voiceName", "rate", "pitch", "volume", "mode", "highlightTheme"]);
+      const stored = await chrome.storage.sync.get(["voiceName", "rate", "pitch", "volume", "mode", "highlightTheme", "hoverBorderEnabled"]);
       if (stored.voiceName) state.voiceName = stored.voiceName;
       if (stored.rate != null) state.rate = stored.rate;
       if (stored.pitch != null) state.pitch = stored.pitch;
       if (stored.volume != null) state.volume = stored.volume;
       if (stored.mode) state.mode = stored.mode;
+      if (stored.hoverBorderEnabled != null) hoverBorderEnabled = stored.hoverBorderEnabled;
       if (stored.highlightTheme) {
         currentTheme = stored.highlightTheme;
         applyTheme(currentTheme);
