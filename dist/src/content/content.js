@@ -14,20 +14,20 @@
   };
   const HIGHLIGHT_THEMES = [
     {
-      id: "yellow",
-      label: "Yellow",
-      swatch: "#FFE066",
-      wordBg: "#FFE066",
-      wordColor: "#0d1117",
-      sentenceBg: "rgba(255, 224, 102, 0.2)"
-    },
-    {
       id: "sky",
       label: "Sky",
       swatch: "#0ea5e9",
       wordBg: "#0ea5e9",
       wordColor: "#ffffff",
       sentenceBg: "rgba(14, 165, 233, 0.15)"
+    },
+    {
+      id: "yellow",
+      label: "Yellow",
+      swatch: "#FFE066",
+      wordBg: "#FFE066",
+      wordColor: "#0d1117",
+      sentenceBg: "rgba(255, 224, 102, 0.2)"
     },
     {
       id: "mint",
@@ -94,7 +94,7 @@
       sentenceBg: "transparent"
     }
   ];
-  const DEFAULT_THEME_ID = "yellow";
+  const DEFAULT_THEME_ID = "sky";
   const STYLE_ID = "spokn-highlight-theme";
   function applyTheme(themeId) {
     const theme = HIGHLIGHT_THEMES.find((t) => t.id === themeId) ?? HIGHLIGHT_THEMES[0];
