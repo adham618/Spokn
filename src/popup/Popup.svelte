@@ -240,13 +240,13 @@
     <p class="shortcuts-title">Keyboard shortcuts</p>
     <div class="shortcut-list">
       {#if isMac}
-        <span class="shortcut"><kbd>⌘</kbd>+<kbd>Shift</kbd>+<kbd>J</kbd> Play / Pause</span>
-        <span class="shortcut"><kbd>⌘</kbd>+<kbd>Shift</kbd>+<kbd>K</kbd> Stop</span>
-        <span class="shortcut"><kbd>⌘</kbd>+<kbd>Shift</kbd>+<kbd>L</kbd> Read selection</span>
+        <span class="shortcut"><kbd>⌘</kbd>+<kbd>Shift</kbd>+<kbd>9</kbd> Play / Pause</span>
+        <span class="shortcut"><kbd>⌘</kbd>+<kbd>Shift</kbd>+<kbd>0</kbd> Stop</span>
+        <span class="shortcut"><kbd>⌘</kbd>+<kbd>Shift</kbd>+<kbd>8</kbd> Read selection</span>
       {:else}
-        <span class="shortcut"><kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>J</kbd> Play / Pause</span>
-        <span class="shortcut"><kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>K</kbd> Stop</span>
-        <span class="shortcut"><kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>L</kbd> Read selection</span>
+        <span class="shortcut"><kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>9</kbd> Play / Pause</span>
+        <span class="shortcut"><kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>0</kbd> Stop</span>
+        <span class="shortcut"><kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>8</kbd> Read selection</span>
       {/if}
     </div>
   </section>

@@ -345,28 +345,28 @@
           <div id="spokn-shortcuts">
             ${navigator.userAgent.toLowerCase().includes("mac") ? `
             <div class="shortcut-row">
-              <span class="shortcut-keys"><kbd>⌘</kbd><kbd>Shift</kbd><kbd>J</kbd></span>
+              <span class="shortcut-keys"><kbd>⌘</kbd><kbd>Shift</kbd><kbd>9</kbd></span>
               <span class="shortcut-desc">Play / Pause</span>
             </div>
             <div class="shortcut-row">
-              <span class="shortcut-keys"><kbd>⌘</kbd><kbd>Shift</kbd><kbd>K</kbd></span>
+              <span class="shortcut-keys"><kbd>⌘</kbd><kbd>Shift</kbd><kbd>0</kbd></span>
               <span class="shortcut-desc">Stop</span>
             </div>
             <div class="shortcut-row">
-              <span class="shortcut-keys"><kbd>⌘</kbd><kbd>Shift</kbd><kbd>L</kbd></span>
+              <span class="shortcut-keys"><kbd>⌘</kbd><kbd>Shift</kbd><kbd>8</kbd></span>
               <span class="shortcut-desc">Read selection</span>
             </div>
             ` : `
             <div class="shortcut-row">
-              <span class="shortcut-keys"><kbd>Alt</kbd><kbd>Shift</kbd><kbd>J</kbd></span>
+              <span class="shortcut-keys"><kbd>Alt</kbd><kbd>Shift</kbd><kbd>9</kbd></span>
               <span class="shortcut-desc">Play / Pause</span>
             </div>
             <div class="shortcut-row">
-              <span class="shortcut-keys"><kbd>Alt</kbd><kbd>Shift</kbd><kbd>K</kbd></span>
+              <span class="shortcut-keys"><kbd>Alt</kbd><kbd>Shift</kbd><kbd>0</kbd></span>
               <span class="shortcut-desc">Stop</span>
             </div>
             <div class="shortcut-row">
-              <span class="shortcut-keys"><kbd>Alt</kbd><kbd>Shift</kbd><kbd>L</kbd></span>
+              <span class="shortcut-keys"><kbd>Alt</kbd><kbd>Shift</kbd><kbd>8</kbd></span>
               <span class="shortcut-desc">Read selection</span>
             </div>
             `}

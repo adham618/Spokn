@@ -50,21 +50,22 @@ export default defineConfig({
         ],
         commands: {
           'toggle-play': {
-            suggested_key: { default: 'Alt+Shift+J', mac: 'Command+Shift+J' },
+            suggested_key: { default: 'Alt+Shift+9', mac: 'Command+Shift+9' },
             description: 'Play / Pause',
           },
           stop: {
-            suggested_key: { default: 'Alt+Shift+K', mac: 'Command+Shift+K' },
+            suggested_key: { default: 'Alt+Shift+0', mac: 'Command+Shift+0' },
             description: 'Stop',
           },
           'read-selection': {
-            suggested_key: { default: 'Alt+Shift+L', mac: 'Command+Shift+L' },
+            suggested_key: { default: 'Alt+Shift+8', mac: 'Command+Shift+8' },
             description: 'Read selected text',
           },
         },
       }),
       disableAutoLaunch: true,
       printSummary: true,
+      skipManifestValidation: true,
       // Use relative base for popup HTML so asset paths resolve in extension context
       htmlViteConfig: {
         base: './',
