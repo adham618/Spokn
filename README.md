@@ -2,7 +2,7 @@
 
 Offline text-to-speech Chrome extension with word-by-word highlighting. Reads any webpage aloud using your device's built-in voices — no cloud, no API keys, no accounts required.
 
-[**Install from Chrome Web Store**](https://chrome.google.com/webstore/detail/spokn/xxxxxxxxxxxxxxxxxxxxxxxxxxxxxx)
+[**Install from Chrome Web Store**](https://chrome.google.com/webstore/detail/spokn/xxxxxxxxxxxxxxxxxxxxxxxxxxxxxx) &nbsp;[![ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/adham_dev)
 
 ## Features
 
