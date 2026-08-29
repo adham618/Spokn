@@ -10,6 +10,7 @@ export type Message =
   | { type: 'SET_PITCH'; pitch: number }
   | { type: 'SET_VOLUME'; volume: number }
   | { type: 'GET_STATE' }
+  | { type: 'IS_TOOLBAR_VISIBLE' }
   | { type: 'STATE_UPDATE'; state: PlaybackState }
   | { type: 'WORD_BOUNDARY'; wordIndex: number; word: string }
   | { type: 'CLICK_TO_READ_TOGGLE'; enabled: boolean }
@@ -17,5 +18,5 @@ export type Message =
   | { type: 'READ_SELECTION' };
 
 export type MessageResponse =
-  | { success: true; state?: PlaybackState }
+  | { success: true; state?: PlaybackState; visible?: boolean }
   | { success: false; error: string };

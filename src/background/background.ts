@@ -116,25 +116,39 @@ chrome.runtime.onMessage.addListener(
 // ─── Keyboard shortcuts ───────────────────────────────────────────────────────
 
 chrome.commands.onCommand.addListener(async (command) => {
-  const tab = activeTabId
-    ? await chrome.tabs.get(activeTabId).catch(() => null)
-    : await getActiveTab();
+  // Always get the current active tab — shortcuts fire in the context of
+  // whatever tab the user is on, regardless of activeTabId state.
+  const tab = await getActiveTab();
   if (!tab?.id) return;
+
+  const tabId = tab.id;
+  activeTabId = tabId;
+
+  // Ensure the toolbar is open before sending any playback command.
+  const stateRes = await sendToTab(tabId, { type: 'IS_TOOLBAR_VISIBLE' });
+  const toolbarVisible = stateRes.success && (stateRes as any).visible === true;
+  if (!toolbarVisible) {
+    await sendToTab(tabId, { type: 'TOGGLE_TOOLBAR' });
+    // Wait for toolbar to mount before sending playback command
+    await new Promise(resolve => setTimeout(resolve, 200));
+  }
 
   switch (command) {
     case 'toggle-play': {
-      const msg: Message = globalState.status === 'playing'
-        ? { type: 'PAUSE' }
-        : { type: 'RESUME' };
-      await sendToTab(tab.id, msg);
+      if (globalState.status === 'playing') {
+        await sendToTab(tabId, { type: 'PAUSE' });
+      } else if (globalState.status === 'paused') {
+        await sendToTab(tabId, { type: 'RESUME' });
+      } else {
+        await sendToTab(tabId, { type: 'PLAY', mode: globalState.mode ?? 'page' });
+      }
       break;
     }
     case 'stop':
-      await sendToTab(tab.id, { type: 'STOP' });
+      await sendToTab(tabId, { type: 'STOP' });
       break;
     case 'read-selection':
-      activeTabId = tab.id;
-      await sendToTab(tab.id, { type: 'READ_SELECTION' });
+      await sendToTab(tabId, { type: 'READ_SELECTION' });
       break;
   }
 });

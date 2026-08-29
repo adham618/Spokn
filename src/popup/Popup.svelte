@@ -14,6 +14,7 @@
   let settingsOpen = $state(false);
   let toastMsg = $state('');
   let toastTimer: ReturnType<typeof setTimeout> | null = null;
+  const isMac = navigator.platform.toUpperCase().includes('MAC');
 
   // ── Helpers ──────────────────────────────────────────────────────────────
 
@@ -148,6 +149,25 @@
     await sendToTab({ type: 'SET_VOLUME', volume });
     await chrome.storage.sync.set({ volume });
   }
+
+  // ── Reset ────────────────────────────────────────────────────────────────
+
+  async function handleReset() {
+    if (!confirm('Reset all Spokn settings to defaults?')) return;
+    await chrome.storage.sync.clear();
+    // Clear saved toolbar position on the active tab
+    try {
+      const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+      if (tab?.id) {
+        await chrome.scripting.executeScript({
+          target: { tabId: tab.id },
+          func: () => localStorage.removeItem('spokn-toolbar-pos'),
+        });
+      }
+    } catch { /* ignore — scripting may not be available on all pages */ }
+    playbackState = { ...DEFAULT_STATE };
+    toast('Settings reset to defaults');
+  }
 </script>
 
 <main class="popup">
@@ -219,9 +239,15 @@
   <section class="section shortcuts" aria-label="Keyboard shortcuts">
     <p class="shortcuts-title">Keyboard shortcuts</p>
     <div class="shortcut-list">
-      <span class="shortcut"><kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>P</kbd> Play / Pause</span>
-      <span class="shortcut"><kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>S</kbd> Stop</span>
-      <span class="shortcut"><kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>R</kbd> Read selection</span>
+      {#if isMac}
+        <span class="shortcut"><kbd>⌘</kbd>+<kbd>Shift</kbd>+<kbd>J</kbd> Play / Pause</span>
+        <span class="shortcut"><kbd>⌘</kbd>+<kbd>Shift</kbd>+<kbd>K</kbd> Stop</span>
+        <span class="shortcut"><kbd>⌘</kbd>+<kbd>Shift</kbd>+<kbd>L</kbd> Read selection</span>
+      {:else}
+        <span class="shortcut"><kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>J</kbd> Play / Pause</span>
+        <span class="shortcut"><kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>K</kbd> Stop</span>
+        <span class="shortcut"><kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>L</kbd> Read selection</span>
+      {/if}
     </div>
   </section>
 
@@ -237,7 +263,10 @@
       <img src="/kofi.png" alt="" width="20" height="20" aria-hidden="true" />
       Support me on Ko-fi
     </a>
-    <span class="version">v{import.meta.env.VITE_APP_VERSION}</span>
+    <div class="footer-right">
+      <button class="reset-btn" onclick={handleReset} title="Reset all settings to defaults">Reset</button>
+      <span class="version">v{import.meta.env.VITE_APP_VERSION}</span>
+    </div>
   </footer>
 
   <!-- Toast notification -->
@@ -403,6 +432,25 @@
     padding: 10px 18px 14px;
     margin-top: auto;
   }
+
+  .footer-right {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 4px;
+  }
+
+  .reset-btn {
+    background: none;
+    border: none;
+    padding: 0;
+    font-size: 10px;
+    color: #ef4444;
+    cursor: pointer;
+    opacity: 0.7;
+    transition: opacity 0.15s;
+  }
+  .reset-btn:hover { opacity: 1; text-decoration: underline; }
 
   .kofi-btn {
     display: inline-flex;

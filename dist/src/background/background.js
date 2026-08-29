@@ -96,20 +96,32 @@
     }
   );
   chrome.commands.onCommand.addListener(async (command) => {
-    const tab = activeTabId ? await chrome.tabs.get(activeTabId).catch(() => null) : await getActiveTab();
+    const tab = await getActiveTab();
     if (!tab?.id) return;
+    const tabId = tab.id;
+    activeTabId = tabId;
+    const stateRes = await sendToTab(tabId, { type: "IS_TOOLBAR_VISIBLE" });
+    const toolbarVisible = stateRes.success && stateRes.visible === true;
+    if (!toolbarVisible) {
+      await sendToTab(tabId, { type: "TOGGLE_TOOLBAR" });
+      await new Promise((resolve) => setTimeout(resolve, 200));
+    }
     switch (command) {
       case "toggle-play": {
-        const msg = globalState.status === "playing" ? { type: "PAUSE" } : { type: "RESUME" };
-        await sendToTab(tab.id, msg);
+        if (globalState.status === "playing") {
+          await sendToTab(tabId, { type: "PAUSE" });
+        } else if (globalState.status === "paused") {
+          await sendToTab(tabId, { type: "RESUME" });
+        } else {
+          await sendToTab(tabId, { type: "PLAY", mode: globalState.mode ?? "page" });
+        }
         break;
       }
       case "stop":
-        await sendToTab(tab.id, { type: "STOP" });
+        await sendToTab(tabId, { type: "STOP" });
         break;
       case "read-selection":
-        activeTabId = tab.id;
-        await sendToTab(tab.id, { type: "READ_SELECTION" });
+        await sendToTab(tabId, { type: "READ_SELECTION" });
         break;
     }
   });

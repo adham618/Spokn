@@ -10,7 +10,7 @@ export default defineConfig({
       manifest: () => ({
         manifest_version: 3,
         name: 'Spokn',
-        version: '1.0.0',
+        version: '1.0.1',
         description: "Offline text-to-speech with word-by-word highlighting. Uses only your device's built-in voices.",
         icons: {
           '16': 'icons/icon16.png',
@@ -50,15 +50,15 @@ export default defineConfig({
         ],
         commands: {
           'toggle-play': {
-            suggested_key: { default: 'Alt+Shift+P' },
+            suggested_key: { default: 'Alt+Shift+J', mac: 'Command+Shift+J' },
             description: 'Play / Pause',
           },
           stop: {
-            suggested_key: { default: 'Alt+Shift+S' },
+            suggested_key: { default: 'Alt+Shift+K', mac: 'Command+Shift+K' },
             description: 'Stop',
           },
           'read-selection': {
-            suggested_key: { default: 'Alt+Shift+R' },
+            suggested_key: { default: 'Alt+Shift+L', mac: 'Command+Shift+L' },
             description: 'Read selected text',
           },
         },

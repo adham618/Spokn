@@ -113,6 +113,27 @@ function createToolbar(): FloatingToolbar {
         }
         await chrome.storage.sync.set({ hoverBorderEnabled: enabled });
       },
+      onReset: async () => {
+        LOG('reset all settings');
+        // Clear all persisted settings
+        await chrome.storage.sync.clear();
+        // Clear saved toolbar position
+        try { localStorage.removeItem('spokn-toolbar-pos'); } catch { /* ignore */ }
+        // Reset in-memory state to defaults
+        state.voiceName = '';
+        state.rate      = 1.0;
+        state.pitch     = 1.0;
+        state.volume    = 1.0;
+        state.mode      = 'page';
+        hoverBorderEnabled = true;
+        currentTheme = DEFAULT_THEME_ID;
+        applyTheme(DEFAULT_THEME_ID);
+        // Rebuild toolbar with fresh state
+        teardown();
+        toolbar = createToolbar();
+        toolbar.mount();
+        enableClickToRead();
+      },
     },
     buildToolbarState(),
   );
@@ -601,6 +622,10 @@ chrome.runtime.onMessage.addListener(
 
           case 'GET_STATE':
             sendResponse({ success: true, state } satisfies MessageResponse);
+            break;
+
+          case 'IS_TOOLBAR_VISIBLE':
+            sendResponse({ success: true, visible: toolbar?.isVisible() ?? false } satisfies MessageResponse);
             break;
 
           case 'CLICK_TO_READ_TOGGLE':

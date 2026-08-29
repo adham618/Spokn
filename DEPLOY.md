@@ -124,7 +124,7 @@ After adding voices, restart Chrome and reopen the Spokn settings panel — new 
 If you find Spokn useful, you can support development at:
 https://ko-fi.com/yourname
 
-**Version:** 1.0.0
+**Version:** 1.0.1
 **License:** Free
 
 ---

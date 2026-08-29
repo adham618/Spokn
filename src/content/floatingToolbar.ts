@@ -22,6 +22,7 @@ export interface ToolbarCallbacks {
   onModeChange: (mode: 'selection' | 'page' | 'click') => void;
   onThemeChange: (themeId: string) => void;
   onHoverBorderToggle: (enabled: boolean) => void;
+  onReset: () => void;
 }
 
 export interface ToolbarState {
@@ -93,20 +94,25 @@ export class FloatingToolbar {
     this.host = document.createElement('div');
     this.host.id = 'spokn-host';
 
-    // Restore last saved position, or fall back to default (right edge, vertically centred)
+    // Restore last saved position, or fall back to default (right edge, vertically centred).
+    // Saved coords are in viewport space (position: fixed).
+    // Clamp with generous margin so the toolbar is never off-screen.
+    const MARGIN = 8;
     const savedPos = this.loadPosition();
-    const defaultStyles: Partial<CSSStyleDeclaration> = savedPos
-      ? { left: `${savedPos.x}px`, top: `${savedPos.y}px`, right: 'auto', transform: 'none' }
-      : { right: '16px', top: `${window.scrollY + window.innerHeight / 2}px`, transform: 'translateY(-50%)' };
-
+    let defaultStyles: Partial<CSSStyleDeclaration>;
     if (savedPos) {
-      this.posX = savedPos.x;
-      this.posY = savedPos.y;
+      const clampedX = Math.max(0, Math.min(savedPos.x, window.innerWidth  - 80));
+      const clampedY = Math.max(0, Math.min(savedPos.y, window.innerHeight - 80));
+      this.posX = clampedX;
+      this.posY = clampedY;
+      defaultStyles = { left: `${this.posX}px`, top: `${this.posY}px`, right: 'auto', transform: 'none' };
+    } else {
+      defaultStyles = { right: `${MARGIN}px`, top: '50%', transform: 'translateY(-50%)' };
     }
 
     Object.assign(this.host.style, {
       all: 'initial',
-      position: 'absolute',
+      position: 'fixed',
       zIndex: '2147483647',
       pointerEvents: 'none',
       fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
@@ -297,18 +303,33 @@ export class FloatingToolbar {
         <div class="settings-section">
           <div class="settings-section-title">Shortcuts</div>
           <div id="spokn-shortcuts">
+            ${navigator.userAgent.toLowerCase().includes('mac') ? `
             <div class="shortcut-row">
-              <span class="shortcut-keys"><kbd>Alt</kbd><kbd>Shift</kbd><kbd>P</kbd></span>
+              <span class="shortcut-keys"><kbd>⌘</kbd><kbd>Shift</kbd><kbd>J</kbd></span>
               <span class="shortcut-desc">Play / Pause</span>
             </div>
             <div class="shortcut-row">
-              <span class="shortcut-keys"><kbd>Alt</kbd><kbd>Shift</kbd><kbd>S</kbd></span>
+              <span class="shortcut-keys"><kbd>⌘</kbd><kbd>Shift</kbd><kbd>K</kbd></span>
               <span class="shortcut-desc">Stop</span>
             </div>
             <div class="shortcut-row">
-              <span class="shortcut-keys"><kbd>Alt</kbd><kbd>Shift</kbd><kbd>R</kbd></span>
+              <span class="shortcut-keys"><kbd>⌘</kbd><kbd>Shift</kbd><kbd>L</kbd></span>
               <span class="shortcut-desc">Read selection</span>
             </div>
+            ` : `
+            <div class="shortcut-row">
+              <span class="shortcut-keys"><kbd>Alt</kbd><kbd>Shift</kbd><kbd>J</kbd></span>
+              <span class="shortcut-desc">Play / Pause</span>
+            </div>
+            <div class="shortcut-row">
+              <span class="shortcut-keys"><kbd>Alt</kbd><kbd>Shift</kbd><kbd>K</kbd></span>
+              <span class="shortcut-desc">Stop</span>
+            </div>
+            <div class="shortcut-row">
+              <span class="shortcut-keys"><kbd>Alt</kbd><kbd>Shift</kbd><kbd>L</kbd></span>
+              <span class="shortcut-desc">Read selection</span>
+            </div>
+            `}
           </div>
         </div>
 
@@ -320,6 +341,7 @@ export class FloatingToolbar {
             </a>
           </div>
           <div id="spokn-version">${import.meta.env.VITE_APP_NAME} v${import.meta.env.VITE_APP_VERSION}</div>
+          <button id="spokn-reset-btn" title="Reset all settings to defaults">Reset to defaults</button>
         </div>
 
       </div>
@@ -375,6 +397,31 @@ export class FloatingToolbar {
         btn.setAttribute('aria-expanded', String(this.settingsOpen));
         btn.classList.toggle('btn-active', this.settingsOpen);
       }
+      // Reposition the settings panel so it stays within the viewport.
+      // After toggling open, measure available space above/below the host
+      // and pin the panel to whichever side has more room.
+      if (this.settingsOpen && panel && this.host) {
+        // Reset first so we can measure natural height
+        panel.style.top = '';
+        panel.style.bottom = '';
+        panel.style.transform = '';
+        requestAnimationFrame(() => {
+          const hostRect   = this.host!.getBoundingClientRect();
+          const panelH     = panel.offsetHeight;
+          const vh         = window.innerHeight;
+          const PADDING    = 8;
+
+          // Ideal: vertically centered on the host
+          let top = hostRect.top + (hostRect.height / 2) - (panelH / 2);
+          // Clamp so it doesn't overflow top or bottom
+          top = Math.max(PADDING, Math.min(top, vh - panelH - PADDING));
+
+          // Convert to position relative to the host element
+          const relativeTop = top - hostRect.top;
+          panel.style.top = `${relativeTop}px`;
+          panel.style.transform = 'none';
+        });
+      }
     });
 
     s.getElementById('spokn-close')?.addEventListener('click', () => {
@@ -421,6 +468,13 @@ export class FloatingToolbar {
       this.cb.onHoverBorderToggle(enabled);
     });
 
+    // Reset button
+    s.getElementById('spokn-reset-btn')?.addEventListener('click', () => {
+      if (confirm('Reset all Spokn settings to defaults?')) {
+        this.cb.onReset();
+      }
+    });
+
     this.attachSlider('spokn-speed-slider', 0.5, 3.0, (v) => {
       const r = Math.round(v * 10) / 10;
       this.st.rate = r;
@@ -450,20 +504,17 @@ export class FloatingToolbar {
       me.preventDefault();
       this.dragging = true;
       const rect = this.host!.getBoundingClientRect();
-      // Convert to page (absolute) coords
-      const pageLeft = rect.left + window.scrollX;
-      const pageTop  = rect.top  + window.scrollY;
+      // position:fixed uses viewport coords — no scroll offset needed
       if (this.posX === null) {
-        this.posX = pageLeft;
-        this.posY = pageTop;
+        this.posX = rect.left;
+        this.posY = rect.top;
         Object.assign(this.host!.style, {
-          left: `${pageLeft}px`, top: `${pageTop}px`,
+          left: `${this.posX}px`, top: `${this.posY}px`,
           right: 'auto', transform: 'none',
         });
       }
-      // dragDx/Dy relative to page position
-      this.dragDx = (me.clientX + window.scrollX) - pageLeft;
-      this.dragDy = (me.clientY + window.scrollY) - pageTop;
+      this.dragDx = me.clientX - rect.left;
+      this.dragDy = me.clientY - rect.top;
       this.host!.style.cursor = 'grabbing';
     });
   }
@@ -547,9 +598,19 @@ export class FloatingToolbar {
 
   private onMouseMove(e: MouseEvent): void {
     if (!this.dragging || !this.host) return;
-    // Use page coords so dragging works correctly in absolute positioning
-    this.posX = (e.clientX + window.scrollX) - this.dragDx;
-    this.posY = (e.clientY + window.scrollY) - this.dragDy;
+
+    // position:fixed uses viewport coords — no scroll offset
+    const rawX = e.clientX - this.dragDx;
+    const rawY = e.clientY - this.dragDy;
+
+    const panel = this.shadow?.getElementById('spokn-panel');
+    const w = panel?.offsetWidth  ?? 80;
+    const h = panel?.offsetHeight ?? 80;
+
+    const MARGIN = 8;
+    this.posX = Math.max(0, Math.min(rawX, window.innerWidth  - w - MARGIN));
+    this.posY = Math.max(0, Math.min(rawY, window.innerHeight - h - MARGIN));
+
     this.host.style.left = `${this.posX}px`;
     this.host.style.top  = `${this.posY}px`;
   }
@@ -648,7 +709,6 @@ export class FloatingToolbar {
         display: flex;
         flex-direction: column;
         align-items: center;
-        padding-top: 32px;
       }
 
       /* ── Pill ────────────────────────────────────────────────────────────── */
@@ -670,10 +730,13 @@ export class FloatingToolbar {
         box-shadow: 0 2px 12px rgba(0,0,0,0.3);
       }
 
-      /* ── Close button ────────────────────────────────────────────────────── */
+      /* ── Close button — absolutely above the pill, out of flow ─────────── */
       #spokn-close {
         all: unset;
-        align-self: center;
+        position: absolute;
+        top: -28px;
+        left: 50%;
+        transform: translateX(-50%);
         width: 24px;
         height: 24px;
         display: flex;
@@ -685,7 +748,6 @@ export class FloatingToolbar {
         pointer-events: none;
         transition: opacity 0.15s ease, color 0.12s, transform 0.08s;
         z-index: 10;
-        margin-bottom: 4px;
       }
       #spokn-close svg { width: 14px; height: 14px; }
       #spokn-pill-wrap:hover #spokn-close { opacity: 1; pointer-events: auto; }
@@ -768,7 +830,9 @@ export class FloatingToolbar {
         font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
         color: var(--text);
         width: 280px;
-        overflow: hidden;
+        max-height: calc(100vh - 32px);
+        overflow-y: auto;
+        overflow-x: hidden;
         /* Absolute so it doesn't affect the pill position */
         position: absolute;
         right: calc(100% + 10px);
@@ -1044,6 +1108,26 @@ export class FloatingToolbar {
       #spokn-kofi-btn:active { transform: translateY(0); filter: brightness(0.95); }
       #spokn-kofi-logo { width: 24px; height: 24px; flex-shrink: 0; object-fit: contain; }
       #spokn-version { text-align: center; font-size: 10px; color: #72A4F2; margin-top: 0px; }
+
+      #spokn-reset-btn {
+        all: unset;
+        display: block;
+        width: 100%;
+        margin-top: 10px;
+        padding: 7px 0;
+        text-align: center;
+        font-size: 11px;
+        font-family: inherit;
+        color: #ef4444;
+        border: 1px solid rgba(239,68,68,0.3);
+        border-radius: 8px;
+        cursor: pointer;
+        transition: background 0.15s, border-color 0.15s;
+      }
+      #spokn-reset-btn:hover {
+        background: rgba(239,68,68,0.1);
+        border-color: rgba(239,68,68,0.6);
+      }
     `;
   }
 }
