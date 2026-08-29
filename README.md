@@ -19,11 +19,11 @@ Offline text-to-speech Chrome extension with word-by-word highlighting. Reads an
 
 ## Keyboard Shortcuts
 
-| Shortcut | Action |
-|---|---|
-| `Alt + Shift + P` | Play / Pause |
-| `Alt + Shift + S` | Stop |
-| `Alt + Shift + R` | Read selected text |
+| Shortcut (Windows/Linux) | Shortcut (Mac) | Action |
+|---|---|---|
+| `Alt + Shift + K` | `⌘ + Shift + K` | Play / Pause |
+| `Alt + Shift + 0` | `⌘ + Shift + 0` | Stop |
+| `Alt + Shift + 8` | `⌘ + Shift + 8` | Read selected text |
 
 ## Tech Stack
 
@@ -38,28 +38,37 @@ Offline text-to-speech Chrome extension with word-by-word highlighting. Reads an
 
 ```
 spokn/
-├── public/icons/          # Extension icons (16, 32, 48, 128px)
+├── public/
+│   ├── icons/                 # Extension icons (16, 32, 48, 128px)
+│   └── kofi.png               # Ko-fi button image
 ├── src/
-│   ├── popup/             # Svelte popup UI
+│   ├── popup/                 # Svelte popup UI (unused in favour of floating toolbar)
 │   │   ├── Popup.svelte
 │   │   ├── popup.html
 │   │   ├── popup.ts
 │   │   └── components/
-│   ├── content/           # Injected content script
-│   │   ├── content.ts     # Entry point & orchestration
-│   │   ├── tts.ts         # SpeechSynthesis wrapper (chunk/watchdog fixes)
-│   │   ├── highlighter.ts # Word & sentence highlight manager
-│   │   ├── textWalker.ts  # DOM walker & word span injector
-│   │   ├── floatingToolbar.ts  # Draggable Shadow DOM toolbar
-│   │   ├── highlightTheme.ts   # Theme CSS variable injector
-│   │   └── content.css    # Highlight & hover styles
+│   │       ├── PitchSlider.svelte
+│   │       ├── PlaybackControls.svelte
+│   │       ├── SpeedSlider.svelte
+│   │       ├── VoicePicker.svelte
+│   │       └── VolumeSlider.svelte
+│   ├── content/               # Injected content script
+│   │   ├── content.ts         # Entry point & orchestration
+│   │   ├── tts.ts             # SpeechSynthesis wrapper (chunk/watchdog fixes)
+│   │   ├── highlighter.ts     # Word highlight manager
+│   │   ├── textWalker.ts      # DOM walker & word span injector
+│   │   ├── floatingToolbar.ts # Draggable Shadow DOM toolbar
+│   │   ├── highlightTheme.ts  # Theme CSS variable injector
+│   │   └── content.css        # Highlight & hover styles
 │   ├── background/
-│   │   └── background.ts  # Service worker & message relay
+│   │   └── background.ts      # Service worker & message relay
 │   └── shared/
-│       ├── types.ts        # PlaybackState, ReadingMode
-│       └── messages.ts     # Message union types
-├── manifest.json
+│       ├── types.ts            # PlaybackState, ReadingMode
+│       └── messages.ts         # Message union types
+├── privacy-policy/
+│   └── index.html
 ├── vite.config.ts
+├── svelte.config.js
 ├── tsconfig.json
 └── package.json
 ```
