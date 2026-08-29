@@ -119,13 +119,20 @@ After adding voices, restart Chrome and reopen the Spokn settings panel — new 
 
 ---
 
+### Source code
+
+Spokn is open source (MIT license). You can inspect the full source code at:
+https://github.com/adham618/Spokn
+
+---
+
 ### Support
 
 If you find Spokn useful, you can support development at:
 https://ko-fi.com/yourname
 
 **Version:** 1.0.1
-**License:** Free
+**License:** Free (open source, MIT)
 
 ---
 
