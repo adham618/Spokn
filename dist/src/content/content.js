@@ -699,6 +699,8 @@
         display: flex;
         flex-direction: column;
         align-items: center;
+        padding-top: 20px;
+        margin-top: -20px;
       }
 
       /* ── Pill ────────────────────────────────────────────────────────────── */
@@ -724,7 +726,7 @@
       #spokn-close {
         all: unset;
         position: absolute;
-        top: -28px;
+        top: -14px;
         left: 50%;
         transform: translateX(-50%);
         width: 24px;
@@ -742,7 +744,7 @@
       #spokn-close svg { width: 14px; height: 14px; }
       #spokn-pill-wrap:hover #spokn-close { opacity: 1; pointer-events: auto; }
       #spokn-close:hover { color: #888; }
-      #spokn-close:active { transform: scale(0.92); }
+      #spokn-close:active { transform: translateX(-50%) scale(0.92); }
 
       /* ── Toolbar column ──────────────────────────────────────────────────── */
       #spokn-toolbar {
