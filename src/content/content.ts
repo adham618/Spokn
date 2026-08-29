@@ -10,7 +10,7 @@ import type { ToolbarState } from './floatingToolbar.js';
 import { FloatingToolbar } from './floatingToolbar.js';
 import { applyTheme, DEFAULT_THEME_ID, removeTheme } from './highlightTheme.js';
 import type { WalkResult } from './textWalker.js';
-import { HOVER_WORD_CLASS, walkPage, walkSelection, WORD_CLASS } from './textWalker.js';
+import { HOVER_WORD_CLASS, walkPage, walkSelection, walkText, WORD_CLASS } from './textWalker.js';
 import { getVoices, TTS } from './tts.js';
 
 const LOG = import.meta.env.DEV ? (...args: unknown[]) => console.log('[Spokn]', ...args) : () => {};
@@ -53,6 +53,9 @@ function createToolbar(): FloatingToolbar {
       onPlay: (mode) => {
         LOG('toolbar onPlay — mode:', mode);
         if (mode === 'selection') {
+          // Clear any pre-built walkResult so we get a fresh DOM walk
+          walkResult?.restore();
+          walkResult = null;
           startReading('selection').catch(e => ERR('startReading threw:', e));
         } else {
           // page mode — start from beginning of page
@@ -169,12 +172,15 @@ async function startReading(
   let startWordIndex = 0;
   try {
     if (mode === 'selection') {
-      // Selection always needs a fresh walk
-      walkResult?.restore();
-      walkResult = null;
-      const sel = window.getSelection();
-      LOG('selection:', sel?.toString().slice(0, 60));
-      walkResult = walkSelection();
+      // If walkResult was pre-populated (e.g. via walkText fallback), reuse it.
+      // Otherwise do a fresh DOM walk of the live selection.
+      if (!walkResult) {
+        const sel = window.getSelection();
+        LOG('selection:', sel?.toString().slice(0, 60));
+        walkResult = walkSelection();
+      } else {
+        LOG('selection: reusing pre-built walkResult, words:', walkResult.words.length);
+      }
     } else if (!walkResult) {
       // Page walk not done yet — do it now
       walkResult = walkPage();
@@ -556,10 +562,29 @@ chrome.runtime.onMessage.addListener(
             if (!toolbar?.isVisible() && window.self === window.top) {
               toolbar = createToolbar();
               toolbar.mount();
+              applyTheme(currentTheme);
             }
             state.mode = 'selection';
             toolbar?.updateState(buildToolbarState());
-            await startReading('selection');
+
+            if (hasSelection) {
+              // Normal path — DOM selection still intact
+              await startReading('selection');
+            } else if (msg.selectionText?.trim()) {
+              // Fallback — right-click dismissed the DOM selection on Mac before
+              // this message arrived; use the text captured by the background script.
+              LOG('DOM selection gone, using selectionText fallback:', msg.selectionText.slice(0, 60));
+              walkResult?.restore();
+              walkResult = walkText(msg.selectionText);
+              if (walkResult.words.length === 0) {
+                showToolbarError('No readable text in selection.');
+              } else {
+                await startReading('selection');
+              }
+            } else {
+              showToolbarError('No text selected.');
+            }
+
             sendResponse({ success: true } satisfies MessageResponse);
             break;
           }
@@ -569,6 +594,7 @@ chrome.runtime.onMessage.addListener(
               if (!toolbar?.isVisible()) {
                 toolbar = createToolbar();
                 toolbar.mount();
+                applyTheme(currentTheme);
                 enableClickToRead();
               }
               await startReading(msg.mode === 'click' ? 'page' : msg.mode);

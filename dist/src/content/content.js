@@ -1226,6 +1226,43 @@
     }
     return result;
   }
+  function walkText(text) {
+    const trimmed = text.trim();
+    if (!trimmed) {
+      return { words: [], fullText: "", charOffsets: [], restore: () => {
+      } };
+    }
+    const sentences = splitIntoSentences(trimmed);
+    const allWords = [];
+    let sentenceOffset = 0;
+    for (const sentence of sentences) {
+      const tokens = sentence.split(/(\s+)/);
+      for (const token of tokens) {
+        if (/^\s+$/.test(token) || token.length === 0) continue;
+        const span = document.createElement("span");
+        span.className = WORD_CLASS;
+        span.textContent = token;
+        span.dataset.spoknWord = token;
+        allWords.push({ word: token, span, sentenceIndex: sentenceOffset });
+      }
+      sentenceOffset++;
+    }
+    const parts = [];
+    const charOffsets = [];
+    let cursor = 0;
+    for (const w of allWords) {
+      charOffsets.push(cursor);
+      parts.push(w.word);
+      cursor += w.word.length + 1;
+    }
+    return {
+      words: allWords,
+      fullText: parts.join(" "),
+      charOffsets,
+      restore: () => {
+      }
+    };
+  }
   function walkPage() {
     const textNodes = collectTextNodes(document.body);
     return buildResult(textNodes);
@@ -1688,6 +1725,8 @@
       {
         onPlay: (mode) => {
           if (mode === "selection") {
+            walkResult?.restore();
+            walkResult = null;
             startReading("selection").catch((e) => ERR("startReading threw:", e));
           } else {
             startReading("page").catch((e) => ERR("startReading threw:", e));
@@ -1783,11 +1822,13 @@
     let startWordIndex = 0;
     try {
       if (mode === "selection") {
-        walkResult?.restore();
-        walkResult = null;
-        const sel = window.getSelection();
-        LOG("selection:", sel?.toString().slice(0, 60));
-        walkResult = walkSelection();
+        if (!walkResult) {
+          const sel = window.getSelection();
+          LOG("selection:", sel?.toString().slice(0, 60));
+          walkResult = walkSelection();
+        } else {
+          LOG("selection: reusing pre-built walkResult, words:", walkResult.words.length);
+        }
       } else if (!walkResult) {
         walkResult = walkPage();
         LOG("walkPage words:", walkResult.words.length);
@@ -2077,10 +2118,24 @@
               if (!toolbar?.isVisible() && window.self === window.top) {
                 toolbar = createToolbar();
                 toolbar.mount();
+                applyTheme(currentTheme);
               }
               state.mode = "selection";
               toolbar?.updateState(buildToolbarState());
-              await startReading("selection");
+              if (hasSelection) {
+                await startReading("selection");
+              } else if (msg.selectionText?.trim()) {
+                LOG("DOM selection gone, using selectionText fallback:", msg.selectionText.slice(0, 60));
+                walkResult?.restore();
+                walkResult = walkText(msg.selectionText);
+                if (walkResult.words.length === 0) {
+                  showToolbarError("No readable text in selection.");
+                } else {
+                  await startReading("selection");
+                }
+              } else {
+                showToolbarError("No text selected.");
+              }
               sendResponse({ success: true });
               break;
             }
@@ -2089,6 +2144,7 @@
                 if (!toolbar?.isVisible()) {
                   toolbar = createToolbar();
                   toolbar.mount();
+                  applyTheme(currentTheme);
                   enableClickToRead();
                 }
                 await startReading(msg.mode === "click" ? "page" : msg.mode);

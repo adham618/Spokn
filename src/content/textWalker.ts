@@ -147,6 +147,53 @@ export interface WalkResult {
 }
 
 /**
+ * Builds a WalkResult from a plain string — no DOM mutation.
+ * Used as a fallback when the right-click context menu cleared the live
+ * selection before the content script received the READ_SELECTION message.
+ * Word spans are created but never inserted into the page, so restore() is a
+ * no-op.
+ */
+export function walkText(text: string): WalkResult {
+  const trimmed = text.trim();
+  if (!trimmed) {
+    return { words: [], fullText: '', charOffsets: [], restore: () => {} };
+  }
+
+  const sentences = splitIntoSentences(trimmed);
+  const allWords: WordNode[] = [];
+  let sentenceOffset = 0;
+
+  for (const sentence of sentences) {
+    const tokens = sentence.split(/(\s+)/);
+    for (const token of tokens) {
+      if (/^\s+$/.test(token) || token.length === 0) continue;
+      const span = document.createElement('span');
+      span.className = WORD_CLASS;
+      span.textContent = token;
+      span.dataset.spoknWord = token;
+      allWords.push({ word: token, span, sentenceIndex: sentenceOffset });
+    }
+    sentenceOffset++;
+  }
+
+  const parts: string[] = [];
+  const charOffsets: number[] = [];
+  let cursor = 0;
+  for (const w of allWords) {
+    charOffsets.push(cursor);
+    parts.push(w.word);
+    cursor += w.word.length + 1;
+  }
+
+  return {
+    words: allWords,
+    fullText: parts.join(' '),
+    charOffsets,
+    restore: () => {},
+  };
+}
+
+/**
  * Wraps all page text in spokn word spans and returns structured walk result.
  * Call result.restore() to undo all DOM mutations.
  */

@@ -15,7 +15,7 @@ export type Message =
   | { type: 'WORD_BOUNDARY'; wordIndex: number; word: string }
   | { type: 'CLICK_TO_READ_TOGGLE'; enabled: boolean }
   | { type: 'TOGGLE_TOOLBAR' }
-  | { type: 'READ_SELECTION' };
+  | { type: 'READ_SELECTION'; selectionText?: string };
 
 export type MessageResponse =
   | { success: true; state?: PlaybackState; visible?: boolean }

@@ -43,8 +43,12 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
   if (info.menuItemId !== 'spokn-read-selection' || !tab?.id) return;
   activeTabId = tab.id;
 
-  // Show toolbar first (if not already visible), then read the selection
-  const res = await sendToTab(tab.id, { type: 'READ_SELECTION' });
+  // Pass selectionText so the content script can fall back to it if the
+  // right-click dismissed the DOM selection before the message arrives (Mac).
+  const res = await sendToTab(tab.id, {
+    type: 'READ_SELECTION',
+    selectionText: info.selectionText ?? '',
+  });
   if (!res.success) {
     console.error('[Spokn BG] READ_SELECTION failed:', res.error);
   }

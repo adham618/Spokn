@@ -42,7 +42,10 @@
   chrome.contextMenus.onClicked.addListener(async (info, tab) => {
     if (info.menuItemId !== "spokn-read-selection" || !tab?.id) return;
     activeTabId = tab.id;
-    const res = await sendToTab(tab.id, { type: "READ_SELECTION" });
+    const res = await sendToTab(tab.id, {
+      type: "READ_SELECTION",
+      selectionText: info.selectionText ?? ""
+    });
     if (!res.success) {
       console.error("[Spokn BG] READ_SELECTION failed:", res.error);
     }
