@@ -1,24 +1,37 @@
 <!DOCTYPE html>
-<html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Spokn</title>
-    <style>
-      /* Reset to prevent any browser default bleed */
-      *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-      html, body {
-        width: 360px;
-        min-height: 480px;
-        overflow-x: hidden;
-        background: #0a0a0f;
-        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-        -webkit-font-smoothing: antialiased;
-      }
-    </style>
-  </head>
-  <body>
-    <div id="app"></div>
-    <script type="module" src="./popup.ts"></script>
-  </body>
+<html lang="en" dir="ltr">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Spokn</title>
+  <style>
+    /* Reset to prevent any browser default bleed */
+    *,
+    *::before,
+    *::after {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    html,
+    body {
+      width: 360px;
+      min-height: 480px;
+      overflow-x: hidden;
+      background: #0a0a0f;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      -webkit-font-smoothing: antialiased;
+      direction: ltr;
+      unicode-bidi: isolate;
+    }
+  </style>
+</head>
+
+<body>
+  <div id="app"></div>
+  <script type="module" src="./popup.ts"></script>
+</body>
+
 </html>

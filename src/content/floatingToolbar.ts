@@ -98,6 +98,7 @@ export class FloatingToolbar {
 
     this.host = document.createElement('div');
     this.host.id = 'spokn-host';
+    this.host.dir = 'ltr';
 
     // Restore last saved position, or fall back to default (right edge, vertically centred).
     // Saved coords are in viewport space (position: fixed).
@@ -761,6 +762,8 @@ export class FloatingToolbar {
         transform: translateX(20px);
         transition: opacity 0.22s ease, transform 0.22s ease;
         user-select: none;
+        direction: ltr;
+        unicode-bidi: isolate;
         --bg:         #0f1117;
         --surface:    rgba(255,255,255,0.06);
         --surface-hv: rgba(255,255,255,0.1);
