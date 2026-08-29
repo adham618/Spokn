@@ -1,4 +1,4 @@
-# Spokn
+# <img src="public/icons/icon128.png" width="32" height="32" align="center" alt="Spokn icon"> Spokn
 
 Offline text-to-speech Chrome extension with word-by-word highlighting. Reads any webpage aloud using your device's built-in voices — no cloud, no API keys, no accounts required.
 
