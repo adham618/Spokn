@@ -2,6 +2,8 @@
 
 Offline text-to-speech Chrome extension with word-by-word highlighting. Reads any webpage aloud using your device's built-in voices — no cloud, no API keys, no accounts required.
 
+[**Install from Chrome Web Store**](https://chrome.google.com/webstore/detail/spokn/xxxxxxxxxxxxxxxxxxxxxxxxxxxxxx)
+
 ## Features
 
 - **Word-by-word highlighting** — each word is highlighted precisely as it's spoken, Speechify-style
@@ -84,3 +86,11 @@ Chrome's `speechSynthesis` has several known bugs that Spokn handles:
 - **15-second cutoff** — long text is split into sentence-aligned chunks and queued serially
 - **Empty voices on load** — waits for the `voiceschanged` event before populating the voice picker
 - **Tab-switch stall** — a watchdog timer detects no `boundary` events for >3s while speaking and replays the current chunk
+
+## Contributing
+
+Contributions are welcome. If you find a bug or have a feature request, open an issue first so we can discuss it. For code changes, fork the repo, make your changes on a branch, and open a PR. Keep PRs focused — one thing at a time.
+
+## License
+
+MIT — see [LICENSE](LICENSE) for details.
