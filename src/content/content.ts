@@ -418,13 +418,16 @@ function onClickRead(e: MouseEvent): void {
   (el as Element).classList.remove('spokn-clickable-hover');
 
   // If the user clicked directly on a word span, pass that span so playback
-  // starts from that exact word rather than the start of the paragraph.
+  // starts from that exact word. If they clicked empty space (not on any word
+  // span), do nothing — don't restart playback.
   const target = e.target as Element;
   const clickedSpan = target.classList.contains(WORD_CLASS)
     ? target
     : target.closest(`.${WORD_CLASS}`);
 
-  startReading('page', (clickedSpan ?? el) as Element).catch(ex => ERR('click-to-read threw:', ex));
+  if (!clickedSpan) return;
+
+  startReading('page', clickedSpan as Element).catch(ex => ERR('click-to-read threw:', ex));
 }
 
 // ─── Toolbar teardown ─────────────────────────────────────────────────────────

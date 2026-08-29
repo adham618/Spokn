@@ -1982,7 +1982,8 @@
     el.classList.remove("spokn-clickable-hover");
     const target = e.target;
     const clickedSpan = target.classList.contains(WORD_CLASS) ? target : target.closest(`.${WORD_CLASS}`);
-    startReading("page", clickedSpan ?? el).catch((ex) => ERR("click-to-read threw:", ex));
+    if (!clickedSpan) return;
+    startReading("page", clickedSpan).catch((ex) => ERR("click-to-read threw:", ex));
   }
   function teardown() {
     const t = toolbar;
