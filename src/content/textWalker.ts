@@ -28,7 +28,6 @@ const SKIP_TAGS = new Set([
 /** spokn- prefixed class so we never clash with host page styles */
 export const WORD_CLASS = 'spokn-word';
 export const ACTIVE_WORD_CLASS = 'spokn-word-active';
-export const HOVER_WORD_CLASS = 'spokn-word-hover';
 export const SENTENCE_CLASS = 'spokn-sentence';
 export const ACTIVE_SENTENCE_CLASS = 'spokn-sentence-active';
 
@@ -203,6 +202,15 @@ export function walkPage(): WalkResult {
 }
 
 /**
+ * Async version of walkPage — processes text nodes in chunks so the main
+ * thread stays interactive. Use this from startReading() on page mode.
+ */
+export async function walkPageAsync(): Promise<WalkResult> {
+  const textNodes = collectTextNodes(document.body);
+  return buildResultAsync(textNodes);
+}
+
+/**
  * Wraps only the current selection's text in spokn word spans.
  */
 export function walkSelection(): WalkResult {
@@ -290,6 +298,75 @@ function buildResult(textNodes: Text[]): WalkResult {
       }
       const textNode = document.createTextNode(text);
       // Insert the restored text node and remove the span groups
+      if (refNode && parent.contains(refNode)) {
+        parent.insertBefore(textNode, refNode);
+      } else {
+        parent.appendChild(textNode);
+      }
+      for (const node of nodes) {
+        if (parent.contains(node)) parent.removeChild(node);
+      }
+    }
+  }
+
+  return { words: allWords, fullText, charOffsets, restore };
+}
+
+/**
+ * Async version of buildResult — processes text nodes in chunks, yielding
+ * between each chunk so the browser stays responsive during long page walks.
+ * CHUNK_SIZE controls how many text nodes are wrapped per frame.
+ */
+const CHUNK_SIZE = 50;
+
+async function buildResultAsync(textNodes: Text[]): Promise<WalkResult> {
+  const allWords: WordNode[] = [];
+  let sentenceOffset = 0;
+  const originals: Array<{ parent: Node; nodes: ChildNode[]; refNode: ChildNode | null }> = [];
+
+  for (let i = 0; i < textNodes.length; i += CHUNK_SIZE) {
+    const chunk = textNodes.slice(i, i + CHUNK_SIZE);
+
+    for (const tn of chunk) {
+      const parent = tn.parentNode;
+      if (!parent) continue;
+
+      const beforeChildren = Array.from(parent.childNodes);
+      const idx = beforeChildren.indexOf(tn);
+
+      const words = wrapTextNode(tn, sentenceOffset);
+      if (words.length === 0) continue;
+
+      sentenceOffset = (words[words.length - 1]?.sentenceIndex ?? sentenceOffset) + 1;
+      allWords.push(...words);
+
+      const afterChildren = Array.from(parent.childNodes);
+      const inserted = afterChildren.slice(idx, idx + (afterChildren.length - beforeChildren.length + 1));
+      originals.push({ parent, nodes: inserted, refNode: inserted[inserted.length - 1]?.nextSibling ?? null });
+    }
+
+    // Yield to the browser between chunks so UI stays interactive
+    if (i + CHUNK_SIZE < textNodes.length) {
+      await new Promise<void>(resolve => setTimeout(resolve, 0));
+    }
+  }
+
+  const parts: string[] = [];
+  const charOffsets: number[] = [];
+  let cursor = 0;
+  for (const w of allWords) {
+    charOffsets.push(cursor);
+    parts.push(w.word);
+    cursor += w.word.length + 1;
+  }
+
+  const fullText = parts.join(' ');
+
+  function restore() {
+    for (const { parent, nodes, refNode } of originals) {
+      let text = '';
+      for (const node of nodes) text += node.textContent ?? '';
+      const textNode = document.createTextNode(text);
       if (refNode && parent.contains(refNode)) {
         parent.insertBefore(textNode, refNode);
       } else {

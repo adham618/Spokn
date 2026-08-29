@@ -10,7 +10,7 @@ import type { ToolbarState } from './floatingToolbar.js';
 import { FloatingToolbar } from './floatingToolbar.js';
 import { applyTheme, DEFAULT_THEME_ID, removeTheme } from './highlightTheme.js';
 import type { WalkResult } from './textWalker.js';
-import { HOVER_WORD_CLASS, walkPage, walkSelection, walkText, WORD_CLASS } from './textWalker.js';
+import { walkPageAsync, walkSelection, walkText, WORD_CLASS } from './textWalker.js';
 import { getVoices, TTS } from './tts.js';
 
 const LOG = import.meta.env.DEV ? (...args: unknown[]) => console.log('[Spokn]', ...args) : () => {};
@@ -20,12 +20,43 @@ const ERR = (...args: unknown[]) => console.error('[Spokn]', ...args);
 
 let tts: TTS | null = null;
 let walkResult: WalkResult | null = null;
+let walkPromise: Promise<WalkResult> | null = null;  // in-progress walk, if any
 let toolbar: FloatingToolbar | null = null;
 let clickToReadEnabled = false;
 let state: PlaybackState = { ...DEFAULT_STATE };
 let toolbarMounting = false;
 let currentTheme = DEFAULT_THEME_ID;
 let hoverBorderEnabled = true;
+
+// Fix #1 — sentence text cache: rebuilt after every DOM walk so the word-event
+// handler can look up a sentence in O(1) instead of filtering the full word list.
+let sentenceCache: Map<number, string> = new Map();
+
+function buildSentenceCache(result: WalkResult): void {
+  sentenceCache = new Map();
+  for (const w of result.words) {
+    if (!sentenceCache.has(w.sentenceIndex)) {
+      sentenceCache.set(w.sentenceIndex, '');
+    }
+  }
+  for (const w of result.words) {
+    const prev = sentenceCache.get(w.sentenceIndex) ?? '';
+    sentenceCache.set(w.sentenceIndex, prev ? prev + ' ' + w.word : w.word);
+  }
+}
+
+// Fix #2 — debounce helper for chrome.storage.sync writes triggered by slider drag
+function debounce<T extends unknown[]>(fn: (...args: T) => void, ms: number): (...args: T) => void {
+  let timer: ReturnType<typeof setTimeout> | null = null;
+  return (...args: T) => {
+    if (timer !== null) clearTimeout(timer);
+    timer = setTimeout(() => { timer = null; fn(...args); }, ms);
+  };
+}
+
+const persistRate   = debounce((rate: number)   => chrome.storage.sync.set({ rate }),   400);
+const persistPitch  = debounce((pitch: number)  => chrome.storage.sync.set({ pitch }),  400);
+const persistVolume = debounce((volume: number) => chrome.storage.sync.set({ volume }), 400);
 
 // ─── Toolbar factory ──────────────────────────────────────────────────────────
 
@@ -78,20 +109,22 @@ function createToolbar(): FloatingToolbar {
         tts?.updateOptions({ voiceName });
         await chrome.storage.sync.set({ voiceName });
       },
-      onSpeedChange: async (rate) => {
+      // Fix #2 — debounced storage writes for slider callbacks
+      onSpeedChange: (rate) => {
         state.rate = rate;
         tts?.updateOptionsAndRestart({ rate });
-        await chrome.storage.sync.set({ rate });
+        persistRate(rate);
       },
-      onPitchChange: async (pitch) => {
+      onPitchChange: (pitch) => {
         state.pitch = pitch;
         tts?.updateOptionsAndRestart({ pitch });
-        await chrome.storage.sync.set({ pitch });
+        persistPitch(pitch);
       },
-      onVolumeChange: async (volume) => {
+      // Fix #3 — volume doesn't require TTS restart; use updateOptions
+      onVolumeChange: (volume) => {
         state.volume = volume;
-        tts?.updateOptionsAndRestart({ volume });
-        await chrome.storage.sync.set({ volume });
+        tts?.updateOptions({ volume });
+        persistVolume(volume);
       },
       onModeChange: async (mode) => {
         LOG('modeChange:', mode);
@@ -111,8 +144,11 @@ function createToolbar(): FloatingToolbar {
         LOG('hoverBorderToggle:', enabled);
         hoverBorderEnabled = enabled;
         if (!enabled) {
-          document.querySelectorAll('.spokn-clickable-hover')
-            .forEach(el => el.classList.remove('spokn-clickable-hover'));
+          // Fix #5 — clear tracked element instead of querySelectorAll
+          if (lastHoveredClickable) {
+            lastHoveredClickable.classList.remove('spokn-clickable-hover');
+            lastHoveredClickable = null;
+          }
         }
         await chrome.storage.sync.set({ hoverBorderEnabled: enabled });
       },
@@ -162,6 +198,11 @@ async function startReading(
 ): Promise<void> {
   LOG('startReading() — mode:', mode, fromElement ? 'from element' : '');
 
+  // Show loading state and yield two animation frames so the browser paints
+  // the spinner before the synchronous DOM walk blocks the main thread.
+  setState({ status: 'loading' });
+  await new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
+
   // Clean up any previous TTS session
   if (tts) {
     tts.stop();
@@ -182,58 +223,78 @@ async function startReading(
         LOG('selection: reusing pre-built walkResult, words:', walkResult.words.length);
       }
     } else if (!walkResult) {
-      // Page walk not done yet — do it now
-      walkResult = walkPage();
-      LOG('walkPage words:', walkResult.words.length);
+      // Page walk not done yet — await the in-progress eager walk if there is
+      // one, otherwise start a fresh walk now.
+      if (walkPromise) {
+        LOG('awaiting in-progress walk...');
+        walkResult = await walkPromise;
+        walkPromise = null;
+        buildSentenceCache(walkResult);
+        LOG('walk ready, words:', walkResult.words.length);
+      } else {
+        walkResult = await walkPageAsync();
+        LOG('walkPage words:', walkResult.words.length);
+      }
     }
-    // If a click element was provided, start from that word (or the first word
-    // inside the clicked paragraph). Using isSameNode first handles the case
-    // where fromElement IS the word span itself.
+    // Fix #1 — build sentence cache after every walk
+    buildSentenceCache(walkResult);
+
+    // If a click element was provided, find its index in the word list.
     if (fromElement && walkResult) {
       const idx = walkResult.words.findIndex(
         w => w.span.isSameNode(fromElement) || fromElement.contains(w.span),
       );
-      if (idx > 0) startWordIndex = idx;
+      if (idx >= 0) startWordIndex = idx;
     }
   } catch (e) {
     ERR('DOM walk failed:', e);
+    setState({ status: 'stopped' });
     showToolbarError('Could not read page content. Try a different page.');
     return;
   }
 
-  if (walkResult.words.length === 0) {
+  // walkResult is guaranteed non-null here — we always assign it above
+  // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+  let result = walkResult!;
+
+  if (result.words.length === 0) {
     ERR('No readable words found for mode:', mode);
     if (mode === 'selection') {
       // No selection — fall back to reading the full page
       LOG('No selection found, falling back to page mode');
       try {
-        walkResult = walkPage();
-        LOG('walkPage fallback words:', walkResult.words.length);
+        walkResult = await walkPageAsync();
+        result = walkResult;
+        // Fix #1 — rebuild cache after fallback walk
+        buildSentenceCache(result);
+        LOG('walkPage fallback words:', result.words.length);
       } catch (e) {
         ERR('DOM walk fallback failed:', e);
+        setState({ status: 'stopped' });
         showToolbarError('Could not read page content. Try a different page.');
         return;
       }
-      if (walkResult.words.length === 0) {
+      if (result.words.length === 0) {
         showToolbarError('No readable text found on this page.');
+        setState({ status: 'stopped' });
         return;
       }
       // Update mode so state reflects what we're actually doing
       mode = 'page';
     } else {
+      setState({ status: 'stopped' });
       showToolbarError('No readable text found on this page.');
       return;
     }
   }
 
-  LOG('words to speak:', walkResult.words.length, '— first:', walkResult.words[0]?.word);
+  LOG('words to speak:', result.words.length, '— first:', result.words[0]?.word);
 
-  // Enable hover highlight now that word spans are in the DOM
-  enableWordHover();
 
   // Check speechSynthesis is available
   if (typeof speechSynthesis === 'undefined') {
     ERR('speechSynthesis not available on this page');
+    setState({ status: 'stopped' });
     showToolbarError('Speech not available on this page.');
     return;
   }
@@ -255,7 +316,7 @@ async function startReading(
         LOG('TTS started');
         setState({
           status: 'playing', mode, voiceName, rate, pitch, volume,
-          totalWords: walkResult?.words.length ?? 0,
+          totalWords: result.words.length,
           wordIndex: startWordIndex,
         });
         break;
@@ -263,11 +324,9 @@ async function startReading(
       case 'word': {
         const idx  = event.wordIndex ?? 0;
         const word = event.word ?? '';
-        const sentIdx = walkResult?.words[idx]?.sentenceIndex ?? 0;
-        const sentence = walkResult?.words
-          .filter(w => w.sentenceIndex === sentIdx)
-          .map(w => w.word)
-          .join(' ') ?? '';
+        // Fix #1 — O(1) sentence lookup via pre-computed cache
+        const sentIdx  = result.words[idx]?.sentenceIndex ?? 0;
+        const sentence = sentenceCache.get(sentIdx) ?? '';
         setState({ currentWord: word, wordIndex: idx, currentSentence: sentence });
         chrome.runtime.sendMessage({
           type: 'WORD_BOUNDARY', wordIndex: idx, word,
@@ -296,9 +355,10 @@ async function startReading(
   });
 
   try {
-    await tts.play(walkResult.words, startWordIndex);
+    await tts.play(result.words, startWordIndex);
   } catch (e) {
     ERR('tts.play() threw:', e);
+    setState({ status: 'stopped' });
     showToolbarError('Playback failed. Check console for details.');
   }
 }
@@ -320,61 +380,20 @@ function stopReading(): void {
   toolbar?.updateState(buildToolbarState());
 }
 
-/** Show a transient error message in the toolbar preview area. */
+// Fix #4 — delegate to FloatingToolbar.showError() instead of reaching into private shadow
 function showToolbarError(msg: string): void {
   ERR('UI error:', msg);
   if (!toolbar?.isVisible()) return;
-  const preview = toolbar['shadow']?.getElementById('spokn-preview') as HTMLElement | null;
-  if (preview) {
-    preview.textContent = '⚠ ' + msg;
-    preview.style.color = '#f87171';
-    setTimeout(() => {
-      if (preview) {
-        preview.textContent = 'Ready';
-        preview.style.color = '';
-      }
-    }, 4000);
-  }
+  toolbar.showError(msg);
 }
 
-// ─── Word hover highlight ─────────────────────────────────────────────────────
-
-let wordHoverEnabled = false;
-
-function onWordMouseOver(e: MouseEvent): void {
-  const target = e.target as Element;
-  if (target.classList.contains(WORD_CLASS)) {
-    target.classList.add(HOVER_WORD_CLASS);
-  }
-}
-
-function onWordMouseOut(e: MouseEvent): void {
-  const target = e.target as Element;
-  if (target.classList.contains(WORD_CLASS)) {
-    target.classList.remove(HOVER_WORD_CLASS);
-  }
-}
-
-function enableWordHover(): void {
-  if (wordHoverEnabled) return;
-  wordHoverEnabled = true;
-  document.addEventListener('mouseover', onWordMouseOver);
-  document.addEventListener('mouseout', onWordMouseOut);
-}
-
-function disableWordHover(): void {
-  if (!wordHoverEnabled) return;
-  wordHoverEnabled = false;
-  document.removeEventListener('mouseover', onWordMouseOver);
-  document.removeEventListener('mouseout', onWordMouseOut);
-  // Clean up any lingering hover class
-  document.querySelectorAll(`.${HOVER_WORD_CLASS}`)
-    .forEach(el => el.classList.remove(HOVER_WORD_CLASS));
-}
 
 // ─── Click-to-read ────────────────────────────────────────────────────────────
 
 const CLICKABLE = 'p,h1,h2,h3,h4,h5,h6,li,blockquote,td,th,article,section,main';
+
+// Fix #5 — track the currently highlighted element so onHover never needs querySelectorAll
+let lastHoveredClickable: Element | null = null;
 
 function enableClickToRead(): void {
   if (clickToReadEnabled) return;
@@ -390,27 +409,34 @@ function disableClickToRead(): void {
   document.removeEventListener('mouseover', onHover);
   document.removeEventListener('mouseout', onHoverOut);
   document.removeEventListener('click', onClickRead, true);
-  document.querySelectorAll('.spokn-clickable-hover')
-    .forEach(el => el.classList.remove('spokn-clickable-hover'));
+  // Fix #5 — clear via tracked reference, no DOM scan
+  if (lastHoveredClickable) {
+    lastHoveredClickable.classList.remove('spokn-clickable-hover');
+    lastHoveredClickable = null;
+  }
 }
 
 function onHover(e: MouseEvent): void {
   if (!hoverBorderEnabled) return;
   const next = (e.target as Element).closest(CLICKABLE);
-  // Remove from any previously highlighted element that isn't the new target
-  document.querySelectorAll('.spokn-clickable-hover').forEach(el => {
-    if (el !== next) el.classList.remove('spokn-clickable-hover');
-  });
+  // Fix #5 — remove from the tracked element instead of querySelectorAll
+  if (lastHoveredClickable && lastHoveredClickable !== next) {
+    lastHoveredClickable.classList.remove('spokn-clickable-hover');
+  }
+  lastHoveredClickable = next ?? null;
   next?.classList.add('spokn-clickable-hover');
 }
+
 function onHoverOut(e: MouseEvent): void {
   // Only clear if the mouse is leaving to somewhere outside the highlighted element
   const related = (e as MouseEvent).relatedTarget as Element | null;
   const highlighted = (e.target as Element).closest(CLICKABLE) as Element | null;
   if (highlighted && (!related || !highlighted.contains(related))) {
     highlighted.classList.remove('spokn-clickable-hover');
+    if (lastHoveredClickable === highlighted) lastHoveredClickable = null;
   }
 }
+
 function onClickRead(e: MouseEvent): void {
   if ((e.target as Element).closest('#spokn-host')) return;
   const el = (e.target as Element).closest(CLICKABLE);
@@ -421,7 +447,8 @@ function onClickRead(e: MouseEvent): void {
 
   e.preventDefault();
   e.stopPropagation();
-  (el as Element).classList.remove('spokn-clickable-hover');
+  el.classList.remove('spokn-clickable-hover');
+  if (lastHoveredClickable === el) lastHoveredClickable = null;
 
   // If the user clicked directly on a word span, pass that span so playback
   // starts from that exact word. If they clicked empty space (not on any word
@@ -452,7 +479,6 @@ function teardown(): void {
 
   // 2. Remove all event listeners
   disableClickToRead();
-  disableWordHover();
 
   // 3. Restore DOM — remove all spokn word/sentence spans
   try {
@@ -475,10 +501,12 @@ function teardown(): void {
     ERR('teardown: DOM restore failed:', e);
   }
   walkResult = null;
+  walkPromise = null;
+  sentenceCache = new Map();
 
   // 4. Remove any lingering class decorations
-  document.querySelectorAll('.spokn-clickable-hover, .spokn-word-hover, .spokn-word-active, .spokn-sentence-active')
-    .forEach(el => el.classList.remove('spokn-clickable-hover', 'spokn-word-hover', 'spokn-word-active', 'spokn-sentence-active'));
+  document.querySelectorAll('.spokn-clickable-hover, .spokn-word-active, .spokn-sentence-active')
+    .forEach(el => el.classList.remove('spokn-clickable-hover', 'spokn-word-active', 'spokn-sentence-active'));
 
   // 5. Remove injected <style> tag for highlight theme
   removeTheme();
@@ -499,7 +527,7 @@ function teardown(): void {
 
 // ─── Toolbar toggle ───────────────────────────────────────────────────────────
 
-function toggleToolbar(): void {
+function toggleToolbar(showClickHint = false): void {
   LOG('toggleToolbar() — visible:', toolbar?.isVisible(), 'mounting:', toolbarMounting);
   if (toolbarMounting) return;
 
@@ -513,22 +541,34 @@ function toggleToolbar(): void {
     toolbar = createToolbar();
     toolbar.mount();
     enableClickToRead();
-    // Walk page immediately so hover highlight works before TTS starts
-    if (!walkResult && state.mode !== 'selection') {
-      try {
-        walkResult = walkPage();
-        enableWordHover();
-      } catch (e) {
-        ERR('initial walkPage failed:', e);
-      }
-    }
     // Re-apply theme since teardown removed the style tag
     applyTheme(currentTheme);
     LOG('toolbar mounted');
+    if (showClickHint) {
+      requestAnimationFrame(() => {
+        toolbar?.showError('Press play to start reading');
+      });
+    }
   } catch (e) {
     ERR('toolbar mount failed:', e);
   } finally {
     toolbarMounting = false;
+  }
+
+  // Eagerly walk the page in the background so word spans exist immediately
+  // for CSS :hover and so click-to-word has the full word list ready.
+  if (!walkResult && !walkPromise) {
+    walkPromise = walkPageAsync();
+    walkPromise.then(result => {
+      walkPromise = null;
+      if (toolbar?.isVisible() && !walkResult) {
+        walkResult = result;
+        buildSentenceCache(result);
+        LOG('eager walk done, words:', result.words.length);
+      } else {
+        result.restore();
+      }
+    }).catch(e => { walkPromise = null; ERR('eager walk failed:', e); });
   }
 }
 
@@ -546,7 +586,15 @@ chrome.runtime.onMessage.addListener(
           case 'TOGGLE_TOOLBAR':
             // Only the top-level frame mounts the toolbar
             if (window.self === window.top) {
-              toggleToolbar();
+              toggleToolbar((msg as any).showClickHint === true);
+            }
+            sendResponse({ success: true } satisfies MessageResponse);
+            break;
+
+          case 'OPEN_TOOLBAR':
+            // Open the toolbar without closing it if already open (used by shortcuts).
+            if (window.self === window.top && !toolbar?.isVisible()) {
+              toggleToolbar(false);
             }
             sendResponse({ success: true } satisfies MessageResponse);
             break;
@@ -576,6 +624,7 @@ chrome.runtime.onMessage.addListener(
               LOG('DOM selection gone, using selectionText fallback:', msg.selectionText.slice(0, 60));
               walkResult?.restore();
               walkResult = walkText(msg.selectionText);
+              buildSentenceCache(walkResult);
               if (walkResult.words.length === 0) {
                 showToolbarError('No readable text in selection.');
               } else {
@@ -616,7 +665,6 @@ chrome.runtime.onMessage.addListener(
           case 'STOP':
             stopReading();
             disableClickToRead();
-            disableWordHover();
             sendResponse({ success: true } satisfies MessageResponse);
             break;
 

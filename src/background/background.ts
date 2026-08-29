@@ -14,7 +14,11 @@ async function getActiveTab(): Promise<chrome.tabs.Tab | null> {
 
 async function sendToTab(tabId: number, message: Message): Promise<MessageResponse> {
   try {
-    const response = await chrome.tabs.sendMessage(tabId, message);
+    // Always target the top-level frame (frameId: 0). Without this,
+    // chrome.tabs.sendMessage broadcasts to all frames and returns the first
+    // response — which can be an iframe replying before the top frame does,
+    // causing IS_TOOLBAR_VISIBLE to falsely return false.
+    const response = await chrome.tabs.sendMessage(tabId, message, { frameId: 0 });
     return response as MessageResponse;
   } catch {
     return { success: false, error: 'Content script not reachable' };
@@ -91,6 +95,11 @@ chrome.runtime.onMessage.addListener(
           sendResponse({ success: true, state: globalState } satisfies MessageResponse);
           return;
 
+        case 'OPEN_SHORTCUTS_PAGE':
+          chrome.tabs.create({ url: 'chrome://extensions/shortcuts' });
+          sendResponse({ success: true } satisfies MessageResponse);
+          return;
+
         case 'PLAY':
           activeTabId = tabId;
           sendResponse(await sendToTab(tabId, msg));
@@ -128,32 +137,49 @@ chrome.commands.onCommand.addListener(async (command) => {
   const tabId = tab.id;
   activeTabId = tabId;
 
-  // Ensure the toolbar is open before sending any playback command.
-  const stateRes = await sendToTab(tabId, { type: 'IS_TOOLBAR_VISIBLE' });
-  const toolbarVisible = stateRes.success && (stateRes as any).visible === true;
-  if (!toolbarVisible) {
-    await sendToTab(tabId, { type: 'TOGGLE_TOOLBAR' });
-    // Wait for toolbar to mount before sending playback command
-    await new Promise(resolve => setTimeout(resolve, 200));
-  }
-
   switch (command) {
     case 'toggle-play': {
-      if (globalState.status === 'playing') {
+      // Check if the toolbar is already open.
+      const stateRes = await sendToTab(tabId, { type: 'IS_TOOLBAR_VISIBLE' });
+      const toolbarVisible = stateRes.success && (stateRes as any).visible === true;
+
+      if (!toolbarVisible) {
+        // Toolbar is closed — just open it. speechSynthesis.speak() requires a
+        // real page-level user gesture and keyboard shortcuts don't qualify, so
+        // attempting PLAY here would throw a 'not-allowed' error. The user must
+        // click play at least once; after that the shortcut works normally.
+        await sendToTab(tabId, { type: 'OPEN_TOOLBAR' } as any);
+        break;
+      }
+
+      // Toolbar is already open — ask the content script for the live state
+      // instead of relying on globalState which can be stale after a tab switch.
+      const liveRes = await sendToTab(tabId, { type: 'GET_STATE' });
+      const liveStatus = liveRes.success ? (liveRes as any).state?.status : globalState.status;
+      const liveMode   = liveRes.success ? (liveRes as any).state?.mode   : globalState.mode;
+
+      if (liveStatus === 'playing') {
         await sendToTab(tabId, { type: 'PAUSE' });
-      } else if (globalState.status === 'paused') {
+      } else if (liveStatus === 'paused') {
         await sendToTab(tabId, { type: 'RESUME' });
       } else {
-        await sendToTab(tabId, { type: 'PLAY', mode: globalState.mode ?? 'page' });
+        await sendToTab(tabId, { type: 'PLAY', mode: liveMode ?? 'page' });
       }
       break;
     }
-    case 'stop':
+    case 'stop': {
       await sendToTab(tabId, { type: 'STOP' });
       break;
-    case 'read-selection':
+    }
+    case 'read-selection': {
+      // Ensure toolbar is open first (open-only, not toggle).
+      const srStateRes = await sendToTab(tabId, { type: 'IS_TOOLBAR_VISIBLE' });
+      if (!srStateRes.success || !(srStateRes as any).visible) {
+        await sendToTab(tabId, { type: 'OPEN_TOOLBAR' } as any);
+      }
       await sendToTab(tabId, { type: 'READ_SELECTION' });
       break;
+    }
   }
 });
 
@@ -168,6 +194,15 @@ chrome.tabs.onRemoved.addListener((tabId) => {
 
 chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
   if (tabId === activeTabId && changeInfo.status === 'loading') {
+    globalState = { ...DEFAULT_STATE };
+  }
+});
+
+// Fix #8 — reset globalState when the user switches to a different tab so
+// stale playback state from the previous tab never leaks into the new one.
+chrome.tabs.onActivated.addListener(({ tabId }) => {
+  if (tabId !== activeTabId) {
+    activeTabId = tabId;
     globalState = { ...DEFAULT_STATE };
   }
 });

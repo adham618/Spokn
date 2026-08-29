@@ -132,6 +132,8 @@
     cb;
     st;
     settingsOpen = false;
+    // Tracks whether the inline reset-confirm row is showing
+    resetConfirmVisible = false;
     // Drag
     dragging = false;
     dragDx = 0;
@@ -139,6 +141,8 @@
     posX = null;
     posY = null;
     static POS_KEY = "spokn-toolbar-pos";
+    // Fix #11 — CSS is computed once and reused across all render() calls
+    static STATIC_CSS = FloatingToolbar.buildCSS();
     boundMouseMove;
     boundMouseUp;
     constructor(callbacks, initialState) {
@@ -192,11 +196,21 @@
       this.host = null;
       this.shadow = null;
       this.settingsOpen = false;
+      this.resetConfirmVisible = false;
       this.posX = null;
       this.posY = null;
     }
     isVisible() {
       return this.host !== null;
+    }
+    // Fix #4 — public method so content.ts no longer needs to access private shadow
+    showError(msg) {
+      if (!this.shadow) return;
+      let tip = this.shadow.getElementById("spokn-tooltip");
+      if (!tip) return;
+      tip.textContent = msg;
+      tip.classList.add("visible");
+      setTimeout(() => tip?.classList.remove("visible"), 3500);
     }
     // ─── State updates ──────────────────────────────────────────────────────────
     updateState(partial) {
@@ -205,9 +219,18 @@
       const playBtn = this.shadow.getElementById("spokn-playpause");
       if (playBtn) {
         const isPlaying = this.st.status === "playing";
-        playBtn.innerHTML = isPlaying ? ICONS.pause : ICONS.play;
-        playBtn.setAttribute("aria-label", isPlaying ? "Pause" : "Play");
-        playBtn.setAttribute("title", isPlaying ? "Pause" : "Play");
+        const isLoading = this.st.status === "loading";
+        if (isLoading) {
+          playBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#ffffff" stroke-width="2.5" stroke-linecap="round" aria-hidden="true" style="animation:spokn-spin 0.75s linear infinite"><circle cx="12" cy="12" r="9" stroke="#ffffff" stroke-opacity="0.25"/><path d="M12 3a9 9 0 0 1 9 9"/></svg>`;
+          playBtn.setAttribute("aria-label", "Loading…");
+          playBtn.setAttribute("title", "Loading…");
+          playBtn.disabled = false;
+        } else {
+          playBtn.innerHTML = isPlaying ? ICONS.pause : ICONS.play;
+          playBtn.setAttribute("aria-label", isPlaying ? "Pause" : "Play");
+          playBtn.setAttribute("title", isPlaying ? "Pause" : "Play");
+          playBtn.disabled = false;
+        }
       }
       this.syncInput("spokn-speed-slider", this.st.rate);
       this.syncInput("spokn-pitch-slider", this.st.pitch);
@@ -221,7 +244,7 @@
       if (!this.shadow) return;
       this.shadow.innerHTML = "";
       const style = document.createElement("style");
-      style.textContent = this.css();
+      style.textContent = FloatingToolbar.STATIC_CSS;
       this.shadow.appendChild(style);
       const panel = document.createElement("div");
       panel.id = "spokn-panel";
@@ -345,7 +368,7 @@
           <div id="spokn-shortcuts">
             ${navigator.userAgent.toLowerCase().includes("mac") ? `
             <div class="shortcut-row">
-              <span class="shortcut-keys"><kbd>⌘</kbd><kbd>Shift</kbd><kbd>9</kbd></span>
+              <span class="shortcut-keys"><kbd>⌘</kbd><kbd>Shift</kbd><kbd>K</kbd></span>
               <span class="shortcut-desc">Play / Pause</span>
             </div>
             <div class="shortcut-row">
@@ -358,7 +381,7 @@
             </div>
             ` : `
             <div class="shortcut-row">
-              <span class="shortcut-keys"><kbd>Alt</kbd><kbd>Shift</kbd><kbd>9</kbd></span>
+              <span class="shortcut-keys"><kbd>Alt</kbd><kbd>Shift</kbd><kbd>K</kbd></span>
               <span class="shortcut-desc">Play / Pause</span>
             </div>
             <div class="shortcut-row">
@@ -370,6 +393,7 @@
               <span class="shortcut-desc">Read selection</span>
             </div>
             `}
+            <button id="spokn-shortcuts-link" class="shortcut-hint-link">Set shortcuts manually →</button>
           </div>
         </div>
 
@@ -382,11 +406,20 @@
           </div>
           <div id="spokn-version">${"Spokn"} v${"1.0.1"}</div>
           <button id="spokn-reset-btn" title="Reset all settings to defaults">Reset to defaults</button>
+          <!-- Fix #12 — inline confirm row replaces window.confirm() -->
+          <div id="spokn-reset-confirm" style="display:none">
+            <span class="reset-confirm-text">Reset all settings?</span>
+            <div class="reset-confirm-btns">
+              <button id="spokn-reset-confirm-yes">Yes, reset</button>
+              <button id="spokn-reset-confirm-no">Cancel</button>
+            </div>
+          </div>
         </div>
 
       </div>
 
       <div id="spokn-pill-wrap">
+        <div id="spokn-tooltip" aria-live="polite"></div>
         <button id="spokn-close" aria-label="Close" title="Close">
           ${ICONS.close}
         </button>
@@ -488,9 +521,21 @@
         this.cb.onHoverBorderToggle(enabled);
       });
       s.getElementById("spokn-reset-btn")?.addEventListener("click", () => {
-        if (confirm("Reset all Spokn settings to defaults?")) {
-          this.cb.onReset();
-        }
+        const confirmRow = s.getElementById("spokn-reset-confirm");
+        if (!confirmRow) return;
+        this.resetConfirmVisible = !this.resetConfirmVisible;
+        confirmRow.style.display = this.resetConfirmVisible ? "flex" : "none";
+      });
+      s.getElementById("spokn-reset-confirm-yes")?.addEventListener("click", () => {
+        const confirmRow = s.getElementById("spokn-reset-confirm");
+        if (confirmRow) confirmRow.style.display = "none";
+        this.resetConfirmVisible = false;
+        this.cb.onReset();
+      });
+      s.getElementById("spokn-reset-confirm-no")?.addEventListener("click", () => {
+        const confirmRow = s.getElementById("spokn-reset-confirm");
+        if (confirmRow) confirmRow.style.display = "none";
+        this.resetConfirmVisible = false;
       });
       this.attachSlider("spokn-speed-slider", 0.5, 3, (v) => {
         const r = Math.round(v * 10) / 10;
@@ -512,6 +557,9 @@
         const val = s.querySelector("#spokn-vol-slider + .slider-val");
         if (val) val.textContent = `${Math.round(vol * 100)}%`;
         this.cb.onVolumeChange(vol);
+      });
+      s.getElementById("spokn-shortcuts-link")?.addEventListener("click", () => {
+        chrome.runtime.sendMessage({ type: "OPEN_SHORTCUTS_PAGE" });
       });
       s.getElementById("spokn-drag")?.addEventListener("mousedown", (e) => {
         const me = e;
@@ -574,7 +622,8 @@
           }
           select.appendChild(grp);
         });
-        if (!this.st.voiceName && unique.length > 0) {
+        const savedVoiceAvailable = this.st.voiceName && unique.some((v) => v.name === this.st.voiceName);
+        if (!savedVoiceAvailable && unique.length > 0) {
           const preferred = unique.find((v) => v.lang.startsWith("en") && v.localService) ?? unique.find((v) => v.lang.startsWith("en")) ?? unique[0];
           if (preferred) {
             select.value = preferred.name;
@@ -651,7 +700,8 @@
       this.syncSliderFill("spokn-vol-slider", this.st.volume, 0, 1);
     }
     // ─── CSS ──────────────────────────────────────────────────────────────────────
-    css() {
+    // Fix #11 — static method called once to initialise STATIC_CSS
+    static buildCSS() {
       return `
       *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -668,6 +718,11 @@
       */
 
       svg { display: block; flex-shrink: 0; }
+
+      @keyframes spokn-spin {
+        from { transform: rotate(0deg); }
+        to   { transform: rotate(360deg); }
+      }
 
       #spokn-panel {
         pointer-events: auto;
@@ -691,6 +746,37 @@
         --text:       #f0f4ff;
         --muted:      #8b95a8;
         --subtle:     #4a5568;
+      }
+
+      /* ── Tooltip ─────────────────────────────────────────────────────────── */
+      #spokn-tooltip {
+        position: absolute;
+        bottom: calc(100% + 8px);
+        left: 50%;
+        transform: translateX(-50%);
+        background: #1B1C1F;
+        border: 1px solid rgba(255,255,255,0.12);
+        color: #f0f4ff;
+        font-size: 11px;
+        font-family: inherit;
+        white-space: nowrap;
+        padding: 5px 10px;
+        border-radius: 8px;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.4);
+        pointer-events: none;
+        opacity: 0;
+        transition: opacity 0.15s ease;
+        z-index: 10;
+      }
+      #spokn-tooltip.visible { opacity: 1; }
+      #spokn-tooltip::after {
+        content: '';
+        position: absolute;
+        top: 100%;
+        left: 50%;
+        transform: translateX(-50%);
+        border: 5px solid transparent;
+        border-top-color: rgba(255,255,255,0.12);
       }
 
       /* ── Pill wrap — hover zone covering pill + close button area ────────── */
@@ -1063,6 +1149,18 @@
 
       /* ── Shortcuts ───────────────────────────────────────────────────────── */
       #spokn-shortcuts { display: flex; flex-direction: column; gap: 6px; }
+      .shortcut-hint-link {
+        all: unset;
+        font-size: 10px;
+        color: var(--accent);
+        text-decoration: none;
+        opacity: 0.8;
+        margin-top: 2px;
+        display: inline-block;
+        cursor: pointer;
+        transition: opacity 0.12s;
+      }
+      .shortcut-hint-link:hover { opacity: 1; text-decoration: underline; }
       .shortcut-row { display: flex; align-items: center; justify-content: space-between; }
       .shortcut-keys { display: flex; gap: 3px; align-items: center; }
       kbd {
@@ -1120,6 +1218,49 @@
         background: rgba(239,68,68,0.1);
         border-color: rgba(239,68,68,0.6);
       }
+
+      /* Fix #12 — inline reset confirmation row */
+      #spokn-reset-confirm {
+        display: none;
+        flex-direction: column;
+        gap: 6px;
+        margin-top: 6px;
+        padding: 8px 10px;
+        background: rgba(239,68,68,0.08);
+        border: 1px solid rgba(239,68,68,0.25);
+        border-radius: 8px;
+      }
+      .reset-confirm-text {
+        font-size: 11px;
+        color: #f87171;
+        text-align: center;
+      }
+      .reset-confirm-btns {
+        display: flex;
+        gap: 6px;
+      }
+      .reset-confirm-btns button {
+        all: unset;
+        flex: 1;
+        padding: 5px 0;
+        text-align: center;
+        font-size: 11px;
+        font-family: inherit;
+        border-radius: 6px;
+        cursor: pointer;
+        transition: background 0.12s;
+      }
+      #spokn-reset-confirm-yes {
+        background: rgba(239,68,68,0.7);
+        color: #fff;
+      }
+      #spokn-reset-confirm-yes:hover { background: rgba(239,68,68,0.9); }
+      #spokn-reset-confirm-no {
+        background: var(--surface);
+        color: var(--muted);
+        border: 1px solid var(--border);
+      }
+      #spokn-reset-confirm-no:hover { background: var(--surface-hv); }
     `;
     }
   }
@@ -1151,7 +1292,6 @@
   ]);
   const WORD_CLASS = "spokn-word";
   const ACTIVE_WORD_CLASS = "spokn-word-active";
-  const HOVER_WORD_CLASS = "spokn-word-hover";
   const SENTENCE_CLASS = "spokn-sentence";
   const ACTIVE_SENTENCE_CLASS = "spokn-sentence-active";
   function splitIntoSentences(text) {
@@ -1263,9 +1403,9 @@
       }
     };
   }
-  function walkPage() {
+  async function walkPageAsync() {
     const textNodes = collectTextNodes(document.body);
-    return buildResult(textNodes);
+    return buildResultAsync(textNodes);
   }
   function walkSelection() {
     const selection = window.getSelection();
@@ -1328,6 +1468,56 @@
         for (const node of nodes) {
           text += node.textContent ?? "";
         }
+        const textNode = document.createTextNode(text);
+        if (refNode && parent.contains(refNode)) {
+          parent.insertBefore(textNode, refNode);
+        } else {
+          parent.appendChild(textNode);
+        }
+        for (const node of nodes) {
+          if (parent.contains(node)) parent.removeChild(node);
+        }
+      }
+    }
+    return { words: allWords, fullText, charOffsets, restore };
+  }
+  const CHUNK_SIZE = 50;
+  async function buildResultAsync(textNodes) {
+    const allWords = [];
+    let sentenceOffset = 0;
+    const originals = [];
+    for (let i = 0; i < textNodes.length; i += CHUNK_SIZE) {
+      const chunk = textNodes.slice(i, i + CHUNK_SIZE);
+      for (const tn of chunk) {
+        const parent = tn.parentNode;
+        if (!parent) continue;
+        const beforeChildren = Array.from(parent.childNodes);
+        const idx = beforeChildren.indexOf(tn);
+        const words = wrapTextNode(tn, sentenceOffset);
+        if (words.length === 0) continue;
+        sentenceOffset = (words[words.length - 1]?.sentenceIndex ?? sentenceOffset) + 1;
+        allWords.push(...words);
+        const afterChildren = Array.from(parent.childNodes);
+        const inserted = afterChildren.slice(idx, idx + (afterChildren.length - beforeChildren.length + 1));
+        originals.push({ parent, nodes: inserted, refNode: inserted[inserted.length - 1]?.nextSibling ?? null });
+      }
+      if (i + CHUNK_SIZE < textNodes.length) {
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      }
+    }
+    const parts = [];
+    const charOffsets = [];
+    let cursor = 0;
+    for (const w of allWords) {
+      charOffsets.push(cursor);
+      parts.push(w.word);
+      cursor += w.word.length + 1;
+    }
+    const fullText = parts.join(" ");
+    function restore() {
+      for (const { parent, nodes, refNode } of originals) {
+        let text = "";
+        for (const node of nodes) text += node.textContent ?? "";
         const textNode = document.createTextNode(text);
         if (refNode && parent.contains(refNode)) {
           parent.insertBefore(textNode, refNode);
@@ -1697,12 +1887,39 @@
   const ERR = (...args) => console.error("[Spokn]", ...args);
   let tts = null;
   let walkResult = null;
+  let walkPromise = null;
   let toolbar = null;
   let clickToReadEnabled = false;
   let state = { ...DEFAULT_STATE };
   let toolbarMounting = false;
   let currentTheme = DEFAULT_THEME_ID;
   let hoverBorderEnabled = true;
+  let sentenceCache = /* @__PURE__ */ new Map();
+  function buildSentenceCache(result) {
+    sentenceCache = /* @__PURE__ */ new Map();
+    for (const w of result.words) {
+      if (!sentenceCache.has(w.sentenceIndex)) {
+        sentenceCache.set(w.sentenceIndex, "");
+      }
+    }
+    for (const w of result.words) {
+      const prev = sentenceCache.get(w.sentenceIndex) ?? "";
+      sentenceCache.set(w.sentenceIndex, prev ? prev + " " + w.word : w.word);
+    }
+  }
+  function debounce(fn, ms) {
+    let timer = null;
+    return (...args) => {
+      if (timer !== null) clearTimeout(timer);
+      timer = setTimeout(() => {
+        timer = null;
+        fn(...args);
+      }, ms);
+    };
+  }
+  const persistRate = debounce((rate) => chrome.storage.sync.set({ rate }), 400);
+  const persistPitch = debounce((pitch) => chrome.storage.sync.set({ pitch }), 400);
+  const persistVolume = debounce((volume) => chrome.storage.sync.set({ volume }), 400);
   function buildToolbarState() {
     return {
       status: state.status,
@@ -1749,20 +1966,22 @@
           tts?.updateOptions({ voiceName });
           await chrome.storage.sync.set({ voiceName });
         },
-        onSpeedChange: async (rate) => {
+        // Fix #2 — debounced storage writes for slider callbacks
+        onSpeedChange: (rate) => {
           state.rate = rate;
           tts?.updateOptionsAndRestart({ rate });
-          await chrome.storage.sync.set({ rate });
+          persistRate(rate);
         },
-        onPitchChange: async (pitch) => {
+        onPitchChange: (pitch) => {
           state.pitch = pitch;
           tts?.updateOptionsAndRestart({ pitch });
-          await chrome.storage.sync.set({ pitch });
+          persistPitch(pitch);
         },
-        onVolumeChange: async (volume) => {
+        // Fix #3 — volume doesn't require TTS restart; use updateOptions
+        onVolumeChange: (volume) => {
           state.volume = volume;
-          tts?.updateOptionsAndRestart({ volume });
-          await chrome.storage.sync.set({ volume });
+          tts?.updateOptions({ volume });
+          persistVolume(volume);
         },
         onModeChange: async (mode) => {
           state.mode = mode;
@@ -1778,7 +1997,10 @@
         onHoverBorderToggle: async (enabled) => {
           hoverBorderEnabled = enabled;
           if (!enabled) {
-            document.querySelectorAll(".spokn-clickable-hover").forEach((el) => el.classList.remove("spokn-clickable-hover"));
+            if (lastHoveredClickable) {
+              lastHoveredClickable.classList.remove("spokn-clickable-hover");
+              lastHoveredClickable = null;
+            }
           }
           await chrome.storage.sync.set({ hoverBorderEnabled: enabled });
         },
@@ -1815,6 +2037,8 @@
     toolbar?.updateState(buildToolbarState());
   }
   async function startReading(mode, fromElement) {
+    setState({ status: "loading" });
+    await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
     if (tts) {
       tts.stop();
       tts = null;
@@ -1830,45 +2054,61 @@
           LOG("selection: reusing pre-built walkResult, words:", walkResult.words.length);
         }
       } else if (!walkResult) {
-        walkResult = walkPage();
-        LOG("walkPage words:", walkResult.words.length);
+        if (walkPromise) {
+          LOG("awaiting in-progress walk...");
+          walkResult = await walkPromise;
+          walkPromise = null;
+          buildSentenceCache(walkResult);
+          LOG("walk ready, words:", walkResult.words.length);
+        } else {
+          walkResult = await walkPageAsync();
+          LOG("walkPage words:", walkResult.words.length);
+        }
       }
+      buildSentenceCache(walkResult);
       if (fromElement && walkResult) {
         const idx = walkResult.words.findIndex(
           (w) => w.span.isSameNode(fromElement) || fromElement.contains(w.span)
         );
-        if (idx > 0) startWordIndex = idx;
+        if (idx >= 0) startWordIndex = idx;
       }
     } catch (e) {
       ERR("DOM walk failed:", e);
+      setState({ status: "stopped" });
       showToolbarError("Could not read page content. Try a different page.");
       return;
     }
-    if (walkResult.words.length === 0) {
+    let result = walkResult;
+    if (result.words.length === 0) {
       ERR("No readable words found for mode:", mode);
       if (mode === "selection") {
         try {
-          walkResult = walkPage();
-          LOG("walkPage fallback words:", walkResult.words.length);
+          walkResult = await walkPageAsync();
+          result = walkResult;
+          buildSentenceCache(result);
+          LOG("walkPage fallback words:", result.words.length);
         } catch (e) {
           ERR("DOM walk fallback failed:", e);
+          setState({ status: "stopped" });
           showToolbarError("Could not read page content. Try a different page.");
           return;
         }
-        if (walkResult.words.length === 0) {
+        if (result.words.length === 0) {
           showToolbarError("No readable text found on this page.");
+          setState({ status: "stopped" });
           return;
         }
         mode = "page";
       } else {
+        setState({ status: "stopped" });
         showToolbarError("No readable text found on this page.");
         return;
       }
     }
-    LOG("words to speak:", walkResult.words.length, "— first:", walkResult.words[0]?.word);
-    enableWordHover();
+    LOG("words to speak:", result.words.length, "— first:", result.words[0]?.word);
     if (typeof speechSynthesis === "undefined") {
       ERR("speechSynthesis not available on this page");
+      setState({ status: "stopped" });
       showToolbarError("Speech not available on this page.");
       return;
     }
@@ -1888,15 +2128,15 @@
             rate,
             pitch,
             volume,
-            totalWords: walkResult?.words.length ?? 0,
+            totalWords: result.words.length,
             wordIndex: startWordIndex
           });
           break;
         case "word": {
           const idx = event.wordIndex ?? 0;
           const word = event.word ?? "";
-          const sentIdx = walkResult?.words[idx]?.sentenceIndex ?? 0;
-          const sentence = walkResult?.words.filter((w) => w.sentenceIndex === sentIdx).map((w) => w.word).join(" ") ?? "";
+          const sentIdx = result.words[idx]?.sentenceIndex ?? 0;
+          const sentence = sentenceCache.get(sentIdx) ?? "";
           setState({ currentWord: word, wordIndex: idx, currentSentence: sentence });
           chrome.runtime.sendMessage({
             type: "WORD_BOUNDARY",
@@ -1921,9 +2161,10 @@
       }
     });
     try {
-      await tts.play(walkResult.words, startWordIndex);
+      await tts.play(result.words, startWordIndex);
     } catch (e) {
       ERR("tts.play() threw:", e);
+      setState({ status: "stopped" });
       showToolbarError("Playback failed. Check console for details.");
     }
   }
@@ -1944,45 +2185,10 @@
   function showToolbarError(msg) {
     ERR("UI error:", msg);
     if (!toolbar?.isVisible()) return;
-    const preview = toolbar["shadow"]?.getElementById("spokn-preview");
-    if (preview) {
-      preview.textContent = "⚠ " + msg;
-      preview.style.color = "#f87171";
-      setTimeout(() => {
-        if (preview) {
-          preview.textContent = "Ready";
-          preview.style.color = "";
-        }
-      }, 4e3);
-    }
-  }
-  let wordHoverEnabled = false;
-  function onWordMouseOver(e) {
-    const target = e.target;
-    if (target.classList.contains(WORD_CLASS)) {
-      target.classList.add(HOVER_WORD_CLASS);
-    }
-  }
-  function onWordMouseOut(e) {
-    const target = e.target;
-    if (target.classList.contains(WORD_CLASS)) {
-      target.classList.remove(HOVER_WORD_CLASS);
-    }
-  }
-  function enableWordHover() {
-    if (wordHoverEnabled) return;
-    wordHoverEnabled = true;
-    document.addEventListener("mouseover", onWordMouseOver);
-    document.addEventListener("mouseout", onWordMouseOut);
-  }
-  function disableWordHover() {
-    if (!wordHoverEnabled) return;
-    wordHoverEnabled = false;
-    document.removeEventListener("mouseover", onWordMouseOver);
-    document.removeEventListener("mouseout", onWordMouseOut);
-    document.querySelectorAll(`.${HOVER_WORD_CLASS}`).forEach((el) => el.classList.remove(HOVER_WORD_CLASS));
+    toolbar.showError(msg);
   }
   const CLICKABLE = "p,h1,h2,h3,h4,h5,h6,li,blockquote,td,th,article,section,main";
+  let lastHoveredClickable = null;
   function enableClickToRead() {
     if (clickToReadEnabled) return;
     clickToReadEnabled = true;
@@ -1996,14 +2202,18 @@
     document.removeEventListener("mouseover", onHover);
     document.removeEventListener("mouseout", onHoverOut);
     document.removeEventListener("click", onClickRead, true);
-    document.querySelectorAll(".spokn-clickable-hover").forEach((el) => el.classList.remove("spokn-clickable-hover"));
+    if (lastHoveredClickable) {
+      lastHoveredClickable.classList.remove("spokn-clickable-hover");
+      lastHoveredClickable = null;
+    }
   }
   function onHover(e) {
     if (!hoverBorderEnabled) return;
     const next = e.target.closest(CLICKABLE);
-    document.querySelectorAll(".spokn-clickable-hover").forEach((el) => {
-      if (el !== next) el.classList.remove("spokn-clickable-hover");
-    });
+    if (lastHoveredClickable && lastHoveredClickable !== next) {
+      lastHoveredClickable.classList.remove("spokn-clickable-hover");
+    }
+    lastHoveredClickable = next ?? null;
     next?.classList.add("spokn-clickable-hover");
   }
   function onHoverOut(e) {
@@ -2011,6 +2221,7 @@
     const highlighted = e.target.closest(CLICKABLE);
     if (highlighted && (!related || !highlighted.contains(related))) {
       highlighted.classList.remove("spokn-clickable-hover");
+      if (lastHoveredClickable === highlighted) lastHoveredClickable = null;
     }
   }
   function onClickRead(e) {
@@ -2021,6 +2232,7 @@
     e.preventDefault();
     e.stopPropagation();
     el.classList.remove("spokn-clickable-hover");
+    if (lastHoveredClickable === el) lastHoveredClickable = null;
     const target = e.target;
     const clickedSpan = target.classList.contains(WORD_CLASS) ? target : target.closest(`.${WORD_CLASS}`);
     if (!clickedSpan) return;
@@ -2035,7 +2247,6 @@
     }
     tts = null;
     disableClickToRead();
-    disableWordHover();
     try {
       if (walkResult) {
         walkResult.restore();
@@ -2055,7 +2266,9 @@
       ERR("teardown: DOM restore failed:", e);
     }
     walkResult = null;
-    document.querySelectorAll(".spokn-clickable-hover, .spokn-word-hover, .spokn-word-active, .spokn-sentence-active").forEach((el) => el.classList.remove("spokn-clickable-hover", "spokn-word-hover", "spokn-word-active", "spokn-sentence-active"));
+    walkPromise = null;
+    sentenceCache = /* @__PURE__ */ new Map();
+    document.querySelectorAll(".spokn-clickable-hover, .spokn-word-active, .spokn-sentence-active").forEach((el) => el.classList.remove("spokn-clickable-hover", "spokn-word-active", "spokn-sentence-active"));
     removeTheme();
     state = {
       ...DEFAULT_STATE,
@@ -2067,7 +2280,7 @@
     };
     t?.unmount();
   }
-  function toggleToolbar() {
+  function toggleToolbar(showClickHint = false) {
     LOG("toggleToolbar() — visible:", toolbar?.isVisible());
     if (toolbarMounting) return;
     if (toolbar?.isVisible()) {
@@ -2079,20 +2292,33 @@
       toolbar = createToolbar();
       toolbar.mount();
       enableClickToRead();
-      if (!walkResult && state.mode !== "selection") {
-        try {
-          walkResult = walkPage();
-          enableWordHover();
-        } catch (e) {
-          ERR("initial walkPage failed:", e);
-        }
-      }
       applyTheme(currentTheme);
       LOG("toolbar mounted");
+      if (showClickHint) {
+        requestAnimationFrame(() => {
+          toolbar?.showError("Press play to start reading");
+        });
+      }
     } catch (e) {
       ERR("toolbar mount failed:", e);
     } finally {
       toolbarMounting = false;
+    }
+    if (!walkResult && !walkPromise) {
+      walkPromise = walkPageAsync();
+      walkPromise.then((result) => {
+        walkPromise = null;
+        if (toolbar?.isVisible() && !walkResult) {
+          walkResult = result;
+          buildSentenceCache(result);
+          LOG("eager walk done, words:", result.words.length);
+        } else {
+          result.restore();
+        }
+      }).catch((e) => {
+        walkPromise = null;
+        ERR("eager walk failed:", e);
+      });
     }
   }
   chrome.runtime.onMessage.addListener(
@@ -2104,7 +2330,13 @@
           switch (msg.type) {
             case "TOGGLE_TOOLBAR":
               if (window.self === window.top) {
-                toggleToolbar();
+                toggleToolbar(msg.showClickHint === true);
+              }
+              sendResponse({ success: true });
+              break;
+            case "OPEN_TOOLBAR":
+              if (window.self === window.top && !toolbar?.isVisible()) {
+                toggleToolbar(false);
               }
               sendResponse({ success: true });
               break;
@@ -2128,6 +2360,7 @@
                 LOG("DOM selection gone, using selectionText fallback:", msg.selectionText.slice(0, 60));
                 walkResult?.restore();
                 walkResult = walkText(msg.selectionText);
+                buildSentenceCache(walkResult);
                 if (walkResult.words.length === 0) {
                   showToolbarError("No readable text in selection.");
                 } else {
@@ -2163,7 +2396,6 @@
             case "STOP":
               stopReading();
               disableClickToRead();
-              disableWordHover();
               sendResponse({ success: true });
               break;
             case "SET_VOICE":

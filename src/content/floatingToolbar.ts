@@ -26,7 +26,7 @@ export interface ToolbarCallbacks {
 }
 
 export interface ToolbarState {
-  status: 'playing' | 'paused' | 'stopped';
+  status: 'playing' | 'paused' | 'stopped' | 'loading';
   rate: number;
   pitch: number;
   volume: number;
@@ -66,6 +66,8 @@ export class FloatingToolbar {
   private cb: ToolbarCallbacks;
   private st: ToolbarState;
   private settingsOpen = false;
+  // Tracks whether the inline reset-confirm row is showing
+  private resetConfirmVisible = false;
 
   // Drag
   private dragging = false;
@@ -75,6 +77,9 @@ export class FloatingToolbar {
   private posY: number | null = null;
 
   private static readonly POS_KEY = 'spokn-toolbar-pos';
+
+  // Fix #11 — CSS is computed once and reused across all render() calls
+  private static readonly STATIC_CSS: string = FloatingToolbar.buildCSS();
 
   private boundMouseMove: (e: MouseEvent) => void;
   private boundMouseUp: () => void;
@@ -139,11 +144,23 @@ export class FloatingToolbar {
     this.host = null;
     this.shadow = null;
     this.settingsOpen = false;
+    this.resetConfirmVisible = false;
     this.posX = null;
     this.posY = null;
   }
 
   isVisible(): boolean { return this.host !== null; }
+
+  // Fix #4 — public method so content.ts no longer needs to access private shadow
+  showError(msg: string): void {
+    if (!this.shadow) return;
+    // Show a tooltip above the play button
+    let tip = this.shadow.getElementById('spokn-tooltip') as HTMLElement | null;
+    if (!tip) return;
+    tip.textContent = msg;
+    tip.classList.add('visible');
+    setTimeout(() => tip?.classList.remove('visible'), 3500);
+  }
 
   // ─── State updates ──────────────────────────────────────────────────────────
 
@@ -155,9 +172,18 @@ export class FloatingToolbar {
     const playBtn = this.shadow.getElementById('spokn-playpause');
     if (playBtn) {
       const isPlaying = this.st.status === 'playing';
-      playBtn.innerHTML = isPlaying ? ICONS.pause : ICONS.play;
-      playBtn.setAttribute('aria-label', isPlaying ? 'Pause' : 'Play');
-      playBtn.setAttribute('title',      isPlaying ? 'Pause' : 'Play');
+      const isLoading = this.st.status === 'loading';
+      if (isLoading) {
+        playBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#ffffff" stroke-width="2.5" stroke-linecap="round" aria-hidden="true" style="animation:spokn-spin 0.75s linear infinite"><circle cx="12" cy="12" r="9" stroke="#ffffff" stroke-opacity="0.25"/><path d="M12 3a9 9 0 0 1 9 9"/></svg>`;
+        playBtn.setAttribute('aria-label', 'Loading…');
+        playBtn.setAttribute('title', 'Loading…');
+        (playBtn as HTMLButtonElement).disabled = false;
+      } else {
+        playBtn.innerHTML = isPlaying ? ICONS.pause : ICONS.play;
+        playBtn.setAttribute('aria-label', isPlaying ? 'Pause' : 'Play');
+        playBtn.setAttribute('title',      isPlaying ? 'Pause' : 'Play');
+        (playBtn as HTMLButtonElement).disabled = false;
+      }
     }
 
     // Slider syncs
@@ -175,7 +201,8 @@ export class FloatingToolbar {
     if (!this.shadow) return;
     this.shadow.innerHTML = '';
     const style = document.createElement('style');
-    style.textContent = this.css();
+    // Fix #11 — reuse static CSS string instead of generating a new one each render
+    style.textContent = FloatingToolbar.STATIC_CSS;
     this.shadow.appendChild(style);
     const panel = document.createElement('div');
     panel.id = 'spokn-panel';
@@ -305,7 +332,7 @@ export class FloatingToolbar {
           <div id="spokn-shortcuts">
             ${navigator.userAgent.toLowerCase().includes('mac') ? `
             <div class="shortcut-row">
-              <span class="shortcut-keys"><kbd>⌘</kbd><kbd>Shift</kbd><kbd>9</kbd></span>
+              <span class="shortcut-keys"><kbd>⌘</kbd><kbd>Shift</kbd><kbd>K</kbd></span>
               <span class="shortcut-desc">Play / Pause</span>
             </div>
             <div class="shortcut-row">
@@ -318,7 +345,7 @@ export class FloatingToolbar {
             </div>
             ` : `
             <div class="shortcut-row">
-              <span class="shortcut-keys"><kbd>Alt</kbd><kbd>Shift</kbd><kbd>9</kbd></span>
+              <span class="shortcut-keys"><kbd>Alt</kbd><kbd>Shift</kbd><kbd>K</kbd></span>
               <span class="shortcut-desc">Play / Pause</span>
             </div>
             <div class="shortcut-row">
@@ -330,6 +357,7 @@ export class FloatingToolbar {
               <span class="shortcut-desc">Read selection</span>
             </div>
             `}
+            <button id="spokn-shortcuts-link" class="shortcut-hint-link">Set shortcuts manually →</button>
           </div>
         </div>
 
@@ -342,11 +370,20 @@ export class FloatingToolbar {
           </div>
           <div id="spokn-version">${import.meta.env.VITE_APP_NAME} v${import.meta.env.VITE_APP_VERSION}</div>
           <button id="spokn-reset-btn" title="Reset all settings to defaults">Reset to defaults</button>
+          <!-- Fix #12 — inline confirm row replaces window.confirm() -->
+          <div id="spokn-reset-confirm" style="display:none">
+            <span class="reset-confirm-text">Reset all settings?</span>
+            <div class="reset-confirm-btns">
+              <button id="spokn-reset-confirm-yes">Yes, reset</button>
+              <button id="spokn-reset-confirm-no">Cancel</button>
+            </div>
+          </div>
         </div>
 
       </div>
 
       <div id="spokn-pill-wrap">
+        <div id="spokn-tooltip" aria-live="polite"></div>
         <button id="spokn-close" aria-label="Close" title="Close">
           ${ICONS.close}
         </button>
@@ -468,11 +505,25 @@ export class FloatingToolbar {
       this.cb.onHoverBorderToggle(enabled);
     });
 
-    // Reset button
+    // Fix #12 — inline confirm instead of window.confirm()
     s.getElementById('spokn-reset-btn')?.addEventListener('click', () => {
-      if (confirm('Reset all Spokn settings to defaults?')) {
-        this.cb.onReset();
-      }
+      const confirmRow = s.getElementById('spokn-reset-confirm');
+      if (!confirmRow) return;
+      this.resetConfirmVisible = !this.resetConfirmVisible;
+      confirmRow.style.display = this.resetConfirmVisible ? 'flex' : 'none';
+    });
+
+    s.getElementById('spokn-reset-confirm-yes')?.addEventListener('click', () => {
+      const confirmRow = s.getElementById('spokn-reset-confirm');
+      if (confirmRow) confirmRow.style.display = 'none';
+      this.resetConfirmVisible = false;
+      this.cb.onReset();
+    });
+
+    s.getElementById('spokn-reset-confirm-no')?.addEventListener('click', () => {
+      const confirmRow = s.getElementById('spokn-reset-confirm');
+      if (confirmRow) confirmRow.style.display = 'none';
+      this.resetConfirmVisible = false;
     });
 
     this.attachSlider('spokn-speed-slider', 0.5, 3.0, (v) => {
@@ -497,6 +548,10 @@ export class FloatingToolbar {
       const val = s.querySelector('#spokn-vol-slider + .slider-val') as HTMLElement | null;
       if (val) val.textContent = `${Math.round(vol * 100)}%`;
       this.cb.onVolumeChange(vol);
+    });
+
+    s.getElementById('spokn-shortcuts-link')?.addEventListener('click', () => {
+      chrome.runtime.sendMessage({ type: 'OPEN_SHORTCUTS_PAGE' });
     });
 
     s.getElementById('spokn-drag')?.addEventListener('mousedown', (e: Event) => {
@@ -564,7 +619,10 @@ export class FloatingToolbar {
           select.appendChild(grp);
         });
 
-      if (!this.st.voiceName && unique.length > 0) {
+      // Fix #10 — only auto-select a default voice when there is no saved preference
+      // AND the saved voice name doesn't match any available voice.
+      const savedVoiceAvailable = this.st.voiceName && unique.some(v => v.name === this.st.voiceName);
+      if (!savedVoiceAvailable && unique.length > 0) {
         const preferred = unique.find(v => v.lang.startsWith('en') && v.localService)
           ?? unique.find(v => v.lang.startsWith('en')) ?? unique[0];
         if (preferred) {
@@ -593,8 +651,6 @@ export class FloatingToolbar {
     const prompt = `How do I add more text-to-speech voices on ${os}? I'm using a browser extension that reads web pages aloud and I want more voice options to choose from. Please give me simple step-by-step instructions for a regular user, no code.`;
     link.href = `https://chatgpt.com/?q=${encodeURIComponent(prompt)}`;
   }
-
-
 
   private onMouseMove(e: MouseEvent): void {
     if (!this.dragging || !this.host) return;
@@ -661,7 +717,8 @@ export class FloatingToolbar {
 
   // ─── CSS ──────────────────────────────────────────────────────────────────────
 
-  private css(): string {
+  // Fix #11 — static method called once to initialise STATIC_CSS
+  private static buildCSS(): string {
     return `
       *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -678,6 +735,11 @@ export class FloatingToolbar {
       */
 
       svg { display: block; flex-shrink: 0; }
+
+      @keyframes spokn-spin {
+        from { transform: rotate(0deg); }
+        to   { transform: rotate(360deg); }
+      }
 
       #spokn-panel {
         pointer-events: auto;
@@ -701,6 +763,37 @@ export class FloatingToolbar {
         --text:       #f0f4ff;
         --muted:      #8b95a8;
         --subtle:     #4a5568;
+      }
+
+      /* ── Tooltip ─────────────────────────────────────────────────────────── */
+      #spokn-tooltip {
+        position: absolute;
+        bottom: calc(100% + 8px);
+        left: 50%;
+        transform: translateX(-50%);
+        background: #1B1C1F;
+        border: 1px solid rgba(255,255,255,0.12);
+        color: #f0f4ff;
+        font-size: 11px;
+        font-family: inherit;
+        white-space: nowrap;
+        padding: 5px 10px;
+        border-radius: 8px;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.4);
+        pointer-events: none;
+        opacity: 0;
+        transition: opacity 0.15s ease;
+        z-index: 10;
+      }
+      #spokn-tooltip.visible { opacity: 1; }
+      #spokn-tooltip::after {
+        content: '';
+        position: absolute;
+        top: 100%;
+        left: 50%;
+        transform: translateX(-50%);
+        border: 5px solid transparent;
+        border-top-color: rgba(255,255,255,0.12);
       }
 
       /* ── Pill wrap — hover zone covering pill + close button area ────────── */
@@ -1073,6 +1166,18 @@ export class FloatingToolbar {
 
       /* ── Shortcuts ───────────────────────────────────────────────────────── */
       #spokn-shortcuts { display: flex; flex-direction: column; gap: 6px; }
+      .shortcut-hint-link {
+        all: unset;
+        font-size: 10px;
+        color: var(--accent);
+        text-decoration: none;
+        opacity: 0.8;
+        margin-top: 2px;
+        display: inline-block;
+        cursor: pointer;
+        transition: opacity 0.12s;
+      }
+      .shortcut-hint-link:hover { opacity: 1; text-decoration: underline; }
       .shortcut-row { display: flex; align-items: center; justify-content: space-between; }
       .shortcut-keys { display: flex; gap: 3px; align-items: center; }
       kbd {
@@ -1130,6 +1235,49 @@ export class FloatingToolbar {
         background: rgba(239,68,68,0.1);
         border-color: rgba(239,68,68,0.6);
       }
+
+      /* Fix #12 — inline reset confirmation row */
+      #spokn-reset-confirm {
+        display: none;
+        flex-direction: column;
+        gap: 6px;
+        margin-top: 6px;
+        padding: 8px 10px;
+        background: rgba(239,68,68,0.08);
+        border: 1px solid rgba(239,68,68,0.25);
+        border-radius: 8px;
+      }
+      .reset-confirm-text {
+        font-size: 11px;
+        color: #f87171;
+        text-align: center;
+      }
+      .reset-confirm-btns {
+        display: flex;
+        gap: 6px;
+      }
+      .reset-confirm-btns button {
+        all: unset;
+        flex: 1;
+        padding: 5px 0;
+        text-align: center;
+        font-size: 11px;
+        font-family: inherit;
+        border-radius: 6px;
+        cursor: pointer;
+        transition: background 0.12s;
+      }
+      #spokn-reset-confirm-yes {
+        background: rgba(239,68,68,0.7);
+        color: #fff;
+      }
+      #spokn-reset-confirm-yes:hover { background: rgba(239,68,68,0.9); }
+      #spokn-reset-confirm-no {
+        background: var(--surface);
+        color: var(--muted);
+        border: 1px solid var(--border);
+      }
+      #spokn-reset-confirm-no:hover { background: var(--surface-hv); }
     `;
   }
 }

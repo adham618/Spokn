@@ -1,4 +1,4 @@
-export type PlaybackStatus = 'stopped' | 'playing' | 'paused';
+export type PlaybackStatus = 'stopped' | 'playing' | 'paused' | 'loading';
 
 export type ReadingMode = 'selection' | 'page' | 'click';
 

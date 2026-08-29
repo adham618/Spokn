@@ -20,7 +20,7 @@
   }
   async function sendToTab(tabId, message) {
     try {
-      const response = await chrome.tabs.sendMessage(tabId, message);
+      const response = await chrome.tabs.sendMessage(tabId, message, { frameId: 0 });
       return response;
     } catch {
       return { success: false, error: "Content script not reachable" };
@@ -76,6 +76,10 @@
           case "GET_STATE":
             sendResponse({ success: true, state: globalState });
             return;
+          case "OPEN_SHORTCUTS_PAGE":
+            chrome.tabs.create({ url: "chrome://extensions/shortcuts" });
+            sendResponse({ success: true });
+            return;
           case "PLAY":
             activeTabId = tabId;
             sendResponse(await sendToTab(tabId, msg));
@@ -103,29 +107,38 @@
     if (!tab?.id) return;
     const tabId = tab.id;
     activeTabId = tabId;
-    const stateRes = await sendToTab(tabId, { type: "IS_TOOLBAR_VISIBLE" });
-    const toolbarVisible = stateRes.success && stateRes.visible === true;
-    if (!toolbarVisible) {
-      await sendToTab(tabId, { type: "TOGGLE_TOOLBAR" });
-      await new Promise((resolve) => setTimeout(resolve, 200));
-    }
     switch (command) {
       case "toggle-play": {
-        if (globalState.status === "playing") {
+        const stateRes = await sendToTab(tabId, { type: "IS_TOOLBAR_VISIBLE" });
+        const toolbarVisible = stateRes.success && stateRes.visible === true;
+        if (!toolbarVisible) {
+          await sendToTab(tabId, { type: "OPEN_TOOLBAR" });
+          break;
+        }
+        const liveRes = await sendToTab(tabId, { type: "GET_STATE" });
+        const liveStatus = liveRes.success ? liveRes.state?.status : globalState.status;
+        const liveMode = liveRes.success ? liveRes.state?.mode : globalState.mode;
+        if (liveStatus === "playing") {
           await sendToTab(tabId, { type: "PAUSE" });
-        } else if (globalState.status === "paused") {
+        } else if (liveStatus === "paused") {
           await sendToTab(tabId, { type: "RESUME" });
         } else {
-          await sendToTab(tabId, { type: "PLAY", mode: globalState.mode ?? "page" });
+          await sendToTab(tabId, { type: "PLAY", mode: liveMode ?? "page" });
         }
         break;
       }
-      case "stop":
+      case "stop": {
         await sendToTab(tabId, { type: "STOP" });
         break;
-      case "read-selection":
+      }
+      case "read-selection": {
+        const srStateRes = await sendToTab(tabId, { type: "IS_TOOLBAR_VISIBLE" });
+        if (!srStateRes.success || !srStateRes.visible) {
+          await sendToTab(tabId, { type: "OPEN_TOOLBAR" });
+        }
         await sendToTab(tabId, { type: "READ_SELECTION" });
         break;
+      }
     }
   });
   chrome.tabs.onRemoved.addListener((tabId) => {
@@ -136,6 +149,12 @@
   });
   chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
     if (tabId === activeTabId && changeInfo.status === "loading") {
+      globalState = { ...DEFAULT_STATE };
+    }
+  });
+  chrome.tabs.onActivated.addListener(({ tabId }) => {
+    if (tabId !== activeTabId) {
+      activeTabId = tabId;
       globalState = { ...DEFAULT_STATE };
     }
   });

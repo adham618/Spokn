@@ -50,7 +50,7 @@ export default defineConfig({
         ],
         commands: {
           'toggle-play': {
-            suggested_key: { default: 'Alt+Shift+9', mac: 'Command+Shift+9' },
+            suggested_key: { default: 'Alt+Shift+K', mac: 'Command+Shift+K' },
             description: 'Play / Pause',
           },
           stop: {
