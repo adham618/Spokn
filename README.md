@@ -87,6 +87,10 @@ Chrome's `speechSynthesis` has several known bugs that Spokn handles:
 - **Empty voices on load** — waits for the `voiceschanged` event before populating the voice picker
 - **Tab-switch stall** — a watchdog timer detects no `boundary` events for >3s while speaking and replays the current chunk
 
+## Privacy Policy
+
+Spokn collects no data. No analytics, no tracking, no network requests. Full details at [spokn-privacy.pages.dev](https://spokn-privacy.pages.dev/).
+
 ## Contributing
 
 Contributions are welcome. If you find a bug or have a feature request, open an issue first so we can discuss it. For code changes, fork the repo, make your changes on a branch, and open a PR. Keep PRs focused — one thing at a time.
