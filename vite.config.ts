@@ -9,9 +9,9 @@ export default defineConfig({
     webExtension({
       manifest: () => ({
         manifest_version: 3,
-        name: 'Spokn — Text to Speech Reader',
+        name: 'Spokn — Offline Text to Speech',
         version: '1.0.2',
-        description: "Offline text-to-speech with word-by-word highlighting. Uses only your device's built-in voices.",
+        description: "Read any webpage aloud with word-by-word highlighting. 100% offline, no accounts, no API keys. Uses your device's built-in voices.",
         icons: {
           '16': 'icons/icon16.png',
           '32': 'icons/icon32.png',
