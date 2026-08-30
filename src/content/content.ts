@@ -120,10 +120,9 @@ function createToolbar(): FloatingToolbar {
         tts?.updateOptionsAndRestart({ pitch });
         persistPitch(pitch);
       },
-      // Fix #3 — volume doesn't require TTS restart; use updateOptions
       onVolumeChange: (volume) => {
         state.volume = volume;
-        tts?.updateOptions({ volume });
+        tts?.updateOptionsAndRestart({ volume });
         persistVolume(volume);
       },
       onModeChange: async (mode) => {
@@ -299,12 +298,14 @@ async function startReading(
     return;
   }
 
-  // Load persisted settings
-  const stored = await chrome.storage.sync.get(['voiceName', 'rate', 'pitch', 'volume']);
-  const voiceName = (stored.voiceName as string) || state.voiceName || '';
-  const rate     = (stored.rate   as number) ?? state.rate   ?? 1.0;
-  const pitch    = (stored.pitch  as number) ?? state.pitch  ?? 1.0;
-  const volume   = (stored.volume as number) ?? state.volume ?? 1.0;
+  // Use in-memory state as the single source of truth — it was already loaded
+  // from storage during init and kept in sync by every slider/picker callback.
+  // Re-reading storage here caused stale values (e.g. rate: 2) to override the
+  // current in-memory state when a new play session started.
+  const voiceName = state.voiceName || '';
+  const rate      = state.rate   ?? 1.0;
+  const pitch     = state.pitch  ?? 1.0;
+  const volume    = state.volume ?? 1.0;
 
   LOG('TTS settings — voice:', voiceName || '(default)', 'rate:', rate, 'pitch:', pitch, 'vol:', volume);
 
@@ -314,8 +315,12 @@ async function startReading(
     switch (event.type) {
       case 'start':
         LOG('TTS started');
+        // Use state.rate/pitch/volume instead of the closed-over locals so that
+        // any slider changes made while paused are reflected when playback resumes
+        // (the closure captures the values at startReading() time, not the current ones).
         setState({
-          status: 'playing', mode, voiceName, rate, pitch, volume,
+          status: 'playing', mode, voiceName,
+          rate: state.rate, pitch: state.pitch, volume: state.volume,
           totalWords: result.words.length,
           wordIndex: startWordIndex,
         });

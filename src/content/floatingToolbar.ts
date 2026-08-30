@@ -166,6 +166,7 @@ export class FloatingToolbar {
   // ─── State updates ──────────────────────────────────────────────────────────
 
   updateState(partial: Partial<ToolbarState>): void {
+    const prev = this.st;
     this.st = { ...this.st, ...partial };
     if (!this.shadow) return;
 
@@ -187,13 +188,21 @@ export class FloatingToolbar {
       }
     }
 
-    // Slider syncs
-    this.syncInput('spokn-speed-slider', this.st.rate);
-    this.syncInput('spokn-pitch-slider', this.st.pitch);
-    this.syncInput('spokn-vol-slider',   this.st.volume);
-    this.syncSliderFill('spokn-speed-slider', this.st.rate, 0.5, 3.0);
-    this.syncSliderFill('spokn-pitch-slider', this.st.pitch, 0.5, 2.0);
-    this.syncSliderFill('spokn-vol-slider',   this.st.volume, 0, 1);
+    // Only sync sliders when the underlying value actually changed.
+    // Syncing on every word-boundary update (many times/sec) would fight the
+    // user's drag and cause the thumb to flash back to the old position.
+    if (this.st.rate !== prev.rate) {
+      this.syncInput('spokn-speed-slider', this.st.rate);
+      this.syncSliderFill('spokn-speed-slider', this.st.rate, 0.5, 3.0);
+    }
+    if (this.st.pitch !== prev.pitch) {
+      this.syncInput('spokn-pitch-slider', this.st.pitch);
+      this.syncSliderFill('spokn-pitch-slider', this.st.pitch, 0.5, 2.0);
+    }
+    if (this.st.volume !== prev.volume) {
+      this.syncInput('spokn-vol-slider', this.st.volume);
+      this.syncSliderFill('spokn-vol-slider', this.st.volume, 0, 1);
+    }
   }
 
   // ─── Full render ─────────────────────────────────────────────────────────────
@@ -254,7 +263,7 @@ export class FloatingToolbar {
               <select id="spokn-voice-select" aria-label="Select voice">
                 <option value="">Loading voices…</option>
               </select>
-              <span class="select-arrow" aria-hidden="true">${ICONS.chevron}</span>
+              <span class="select-arrow" aria-hidden="true"><svg width="10" height="10" viewBox="0 0 10 6" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M1 1l4 4 4-4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
             </div>
           </div>
           <div class="voice-hint-row">
@@ -266,32 +275,38 @@ export class FloatingToolbar {
             </a>
           </div>
 
-          <div class="settings-row">
+          <div class="settings-row slider-row">
             <label class="settings-label" for="spokn-speed-slider">Speed</label>
             <div class="slider-wrap">
+              <button class="slider-btn" data-slider="spokn-speed-slider" data-dir="-1" aria-label="Decrease speed">−</button>
               <input id="spokn-speed-slider" type="range"
                 min="0.5" max="3" step="0.1" value="${rate}"
                 aria-label="Speed" style="--fill:${speedPct}%"/>
+              <button class="slider-btn" data-slider="spokn-speed-slider" data-dir="1" aria-label="Increase speed">+</button>
               <span class="slider-val">${rate.toFixed(1)}x</span>
             </div>
           </div>
 
-          <div class="settings-row">
+          <div class="settings-row slider-row">
             <label class="settings-label" for="spokn-pitch-slider">Pitch</label>
             <div class="slider-wrap">
+              <button class="slider-btn" data-slider="spokn-pitch-slider" data-dir="-1" aria-label="Decrease pitch">−</button>
               <input id="spokn-pitch-slider" type="range"
                 min="0.5" max="2" step="0.1" value="${pitch}"
                 aria-label="Pitch" style="--fill:${pitchPct}%"/>
+              <button class="slider-btn" data-slider="spokn-pitch-slider" data-dir="1" aria-label="Increase pitch">+</button>
               <span class="slider-val">${pitch.toFixed(1)}</span>
             </div>
           </div>
 
-          <div class="settings-row">
+          <div class="settings-row slider-row">
             <label class="settings-label" for="spokn-vol-slider">Volume</label>
             <div class="slider-wrap">
+              <button class="slider-btn" data-slider="spokn-vol-slider" data-dir="-1" aria-label="Decrease volume">−</button>
               <input id="spokn-vol-slider" type="range"
                 min="0" max="1" step="0.05" value="${volume}"
                 aria-label="Volume" style="--fill:${volPct}%"/>
+              <button class="slider-btn" data-slider="spokn-vol-slider" data-dir="1" aria-label="Increase volume">+</button>
               <span class="slider-val">${Math.round(volume * 100)}%</span>
             </div>
           </div>
@@ -537,25 +552,97 @@ export class FloatingToolbar {
     this.attachSlider('spokn-speed-slider', 0.5, 3.0, (v) => {
       const r = Math.round(v * 10) / 10;
       this.st.rate = r;
-      const val = s.querySelector('#spokn-speed-slider + .slider-val') as HTMLElement | null;
+      const el  = s.getElementById('spokn-speed-slider');
+      const val = el?.closest('.settings-row')?.querySelector('.slider-val') as HTMLElement | null;
       if (val) val.textContent = `${r.toFixed(1)}x`;
-      this.cb.onSpeedChange(r);
     });
+    const speedEl = s.getElementById('spokn-speed-slider') as HTMLInputElement | null;
+    if (speedEl) {
+      speedEl.addEventListener('change', () => {
+        const r = Math.round(parseFloat(speedEl.value) * 10) / 10;
+        this.cb.onSpeedChange(r);
+      });
+    }
 
     this.attachSlider('spokn-pitch-slider', 0.5, 2.0, (v) => {
       const p = Math.round(v * 10) / 10;
       this.st.pitch = p;
-      const val = s.querySelector('#spokn-pitch-slider + .slider-val') as HTMLElement | null;
+      const el  = s.getElementById('spokn-pitch-slider');
+      const val = el?.closest('.settings-row')?.querySelector('.slider-val') as HTMLElement | null;
       if (val) val.textContent = p.toFixed(1);
-      this.cb.onPitchChange(p);
     });
+    const pitchEl = s.getElementById('spokn-pitch-slider') as HTMLInputElement | null;
+    if (pitchEl) {
+      pitchEl.addEventListener('change', () => {
+        const p = Math.round(parseFloat(pitchEl.value) * 10) / 10;
+        this.cb.onPitchChange(p);
+      });
+    }
 
     this.attachSlider('spokn-vol-slider', 0, 1, (v) => {
       const vol = Math.round(v * 100) / 100;
       this.st.volume = vol;
-      const val = s.querySelector('#spokn-vol-slider + .slider-val') as HTMLElement | null;
+      const el  = s.getElementById('spokn-vol-slider');
+      const val = el?.closest('.settings-row')?.querySelector('.slider-val') as HTMLElement | null;
       if (val) val.textContent = `${Math.round(vol * 100)}%`;
-      this.cb.onVolumeChange(vol);
+      // Update label on every drag, but only fire onVolumeChange on release
+      // (change event) to avoid hammering the macOS TTS engine with rapid
+      // cancel()+speak() cycles while the user is still dragging.
+    });
+    const volEl = s.getElementById('spokn-vol-slider') as HTMLInputElement | null;
+    if (volEl) {
+      volEl.addEventListener('change', () => {
+        const vol = Math.round(parseFloat(volEl.value) * 100) / 100;
+        this.cb.onVolumeChange(vol);
+      });
+    }
+
+    // ── +/- buttons for all three sliders ───────────────────────────────────
+    s.querySelectorAll<HTMLButtonElement>('.slider-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const sliderId = btn.dataset.slider!;
+        const dir      = parseInt(btn.dataset.dir ?? '1', 10);
+        const el       = s.getElementById(sliderId) as HTMLInputElement | null;
+        if (!el) return;
+
+        const min  = parseFloat(el.min);
+        const max  = parseFloat(el.max);
+        const step = parseFloat(el.step);
+        const cur  = parseFloat(el.value);
+        const next = Math.min(max, Math.max(min, Math.round((cur + dir * step) * 1000) / 1000));
+        el.value   = String(next);
+
+        // Update fill gradient
+        const pct = ((next - min) / (max - min)) * 100;
+        el.style.setProperty('--fill', `${pct}%`);
+
+        // Update value label
+        const valSpan = btn.closest('.settings-row')?.querySelector('.slider-val') as HTMLElement | null;
+        if (valSpan) {
+          if (sliderId === 'spokn-vol-slider') {
+            valSpan.textContent = `${Math.round(next * 100)}%`;
+          } else if (sliderId === 'spokn-speed-slider') {
+            valSpan.textContent = `${next.toFixed(1)}x`;
+          } else {
+            valSpan.textContent = next.toFixed(1);
+          }
+        }
+
+        // Update internal state and fire the same callback as slider release
+        if (sliderId === 'spokn-speed-slider') {
+          const r = Math.round(next * 10) / 10;
+          this.st.rate = r;
+          this.cb.onSpeedChange(r);
+        } else if (sliderId === 'spokn-pitch-slider') {
+          const p = Math.round(next * 10) / 10;
+          this.st.pitch = p;
+          this.cb.onPitchChange(p);
+        } else if (sliderId === 'spokn-vol-slider') {
+          const vol = Math.round(next * 100) / 100;
+          this.st.volume = vol;
+          this.cb.onVolumeChange(vol);
+        }
+      });
     });
 
     s.getElementById('spokn-shortcuts-link')?.addEventListener('click', () => {
@@ -934,10 +1021,11 @@ export class FloatingToolbar {
         box-shadow: 0 2px 12px rgba(0,0,0,0.3);
         font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
         color: var(--text);
-        width: 280px;
+        width: 300px;
         max-height: calc(100vh - 32px);
         overflow-y: auto;
-        overflow-x: hidden;
+        scrollbar-width: thin;
+        scrollbar-color: rgba(255,255,255,0.15) transparent;
         /* Absolute so it doesn't affect the pill position */
         position: absolute;
         right: calc(100% + 10px);
@@ -947,13 +1035,23 @@ export class FloatingToolbar {
       }
       #spokn-settings.open { display: flex; }
 
+      #spokn-settings::-webkit-scrollbar { width: 4px; }
+      #spokn-settings::-webkit-scrollbar-track { background: transparent; }
+      #spokn-settings::-webkit-scrollbar-thumb {
+        background: rgba(255,255,255,0.15);
+        border-radius: 4px;
+      }
+      #spokn-settings::-webkit-scrollbar-thumb:hover {
+        background: rgba(255,255,255,0.28);
+      }
+
       @keyframes spokn-settings-in {
         from { opacity: 0; transform: translateX(12px); }
         to   { opacity: 1; transform: translateX(0); }
       }
 
       .settings-section {
-        padding: 14px 16px;
+        padding: 14px 20px 14px 16px;
         display: flex;
         flex-direction: column;
         gap: 12px;
@@ -984,6 +1082,10 @@ export class FloatingToolbar {
         width: 46px;
         flex-shrink: 0;
       }
+
+      /* Slider rows get a tighter label + gap to maximize slider track width */
+      .slider-row { gap: 10px; }
+      .slider-row .settings-label { width: 36px; }
 
       /* ── Mode buttons ────────────────────────────────────────────────────── */
       .mode-group {
@@ -1069,21 +1171,40 @@ export class FloatingToolbar {
         display: flex;
         align-items: center;
       }
-      .select-arrow svg { width: 12px; height: 12px; }
+      .select-arrow svg { width: 10px; height: 10px; }
 
       /* ── Sliders ─────────────────────────────────────────────────────────── */
-      .slider-wrap { display: flex; align-items: center; gap: 8px; flex: 1; }
+      .slider-wrap { display: flex; align-items: center; gap: 6px; flex: 1; min-width: 0; }
+      .slider-btn {
+        all: unset;
+        color: var(--muted);
+        font-size: 16px;
+        line-height: 1;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        cursor: pointer;
+        flex-shrink: 0;
+        transition: color 0.12s, transform 0.08s;
+        user-select: none;
+        padding: 0 2px;
+      }
+      .slider-btn:hover { color: var(--text); }
+      .slider-btn:active { transform: scale(0.88); }
       .slider-val {
         font-size: 10px;
         font-weight: 700;
         color: var(--accent);
-        min-width: 30px;
-        text-align: right;
+        min-width: 34px;
+        width: max-content;
+        flex-grow: 0;
         flex-shrink: 0;
+        text-align: right;
         letter-spacing: 0.02em;
       }
       input[type=range] {
         flex: 1;
+        min-width: 0;
         height: 3px;
         -webkit-appearance: none;
         appearance: none;

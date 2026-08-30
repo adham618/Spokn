@@ -141,13 +141,27 @@ export class TTS {
   updateOptionsAndRestart(opts: Partial<TTSOptions>): void {
     this.options = { ...this.options, ...opts };
     if (this.isStopped || this.isPaused) return;
-    // Cancel current utterance and re-speak the current chunk from the top
+    // Cancel current utterance and re-speak the current chunk.
+    // Clear watchdog first so it doesn't race with the restart.
+    this.clearWatchdog();
     speechSynthesis.cancel();
+    // 200 ms gives macOS time to fully release the engine after cancel().
     setTimeout(() => {
-      if (!this.isStopped && !this.isPaused) {
+      if (this.isStopped || this.isPaused) return;
+      if (speechSynthesis.speaking || speechSynthesis.pending) {
+        // Engine still busy — cancel once more and wait another cycle.
+        speechSynthesis.cancel();
+        setTimeout(() => {
+          if (!this.isStopped && !this.isPaused) {
+            this.lastBoundaryTime = Date.now();
+            this.speakChunk(this.chunkIndex);
+          }
+        }, 200);
+      } else {
+        this.lastBoundaryTime = Date.now();
         this.speakChunk(this.chunkIndex);
       }
-    }, 80);
+    }, 200);
   }
 
   async play(words: WordNode[], startWordIndex = 0): Promise<void> {
