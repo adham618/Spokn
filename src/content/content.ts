@@ -88,6 +88,11 @@ function createToolbar(): FloatingToolbar {
           walkResult?.restore();
           walkResult = null;
           startReading('selection').catch(e => ERR('startReading threw:', e));
+        } else if (mode === 'click') {
+          // Click mode — don't start speech immediately; arm the click listener
+          // and show a hint. Speech starts when the user clicks a paragraph.
+          enableClickToRead();
+          showToolbarError('Click any paragraph to start reading');
         } else {
           // page mode — start from beginning of page
           startReading('page').catch(e => ERR('startReading threw:', e));
@@ -131,6 +136,15 @@ function createToolbar(): FloatingToolbar {
         // 'selection' is transient — don't persist it
         if (mode !== 'selection') {
           await chrome.storage.sync.set({ mode });
+        }
+        // Arm/disarm click-to-read based on mode switch
+        if (mode === 'click') {
+          enableClickToRead();
+        } else {
+          // Switching away from click mode — disarm if no active playback
+          if (state.status === 'stopped' || state.status === 'loading') {
+            disableClickToRead();
+          }
         }
       },
       onThemeChange: async (themeId) => {
@@ -259,27 +273,11 @@ async function startReading(
   if (result.words.length === 0) {
     ERR('No readable words found for mode:', mode);
     if (mode === 'selection') {
-      // No selection — fall back to reading the full page
-      LOG('No selection found, falling back to page mode');
-      try {
-        walkResult = await walkPageAsync();
-        result = walkResult;
-        // Fix #1 — rebuild cache after fallback walk
-        buildSentenceCache(result);
-        LOG('walkPage fallback words:', result.words.length);
-      } catch (e) {
-        ERR('DOM walk fallback failed:', e);
-        setState({ status: 'stopped' });
-        showToolbarError('Could not read page content. Try a different page.');
-        return;
-      }
-      if (result.words.length === 0) {
-        showToolbarError('No readable text found on this page.');
-        setState({ status: 'stopped' });
-        return;
-      }
-      // Update mode so state reflects what we're actually doing
-      mode = 'page';
+      // No text selected — tell the user explicitly instead of silently
+      // falling back to page mode, which makes Selection feel identical to Full Page.
+      showToolbarError('No text selected. Highlight some text first.');
+      setState({ status: 'stopped' });
+      return;
     } else {
       setState({ status: 'stopped' });
       showToolbarError('No readable text found on this page.');

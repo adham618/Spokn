@@ -58,7 +58,12 @@ const ICONS = {
   highlight:`<svg ${SVG_ATTRS}><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>`,
   filetext: `<svg ${SVG_ATTRS}><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>`,
   pointer:  `<svg ${SVG_ATTRS}><path d="M4 4l7.07 17 2.51-7.39L21 11.07z"/></svg>`,
+  cursor:   `<svg ${SVG_ATTRS}><path d="M5 3l14 9-7 1-4 7z"/></svg>`,
 } as const;
+
+const SPEED_PRESETS = [0.5, 0.8, 1.0, 1.5, 2.0, 2.5, 3.0];
+// Average spoken words per minute at rate=1.0 (browser TTS baseline)
+const AVG_WPM = 130;
 
 export class FloatingToolbar {
   private host: HTMLDivElement | null = null;
@@ -194,6 +199,13 @@ export class FloatingToolbar {
     if (this.st.rate !== prev.rate) {
       this.syncInput('spokn-speed-slider', this.st.rate);
       this.syncSliderFill('spokn-speed-slider', this.st.rate, 0.5, 3.0);
+      // Sync speed preset active state
+      this.shadow.querySelectorAll<HTMLButtonElement>('.speed-preset-btn').forEach(btn => {
+        const p = parseFloat(btn.dataset.preset ?? '0');
+        const active = Math.abs(this.st.rate - p) < 0.01;
+        btn.classList.toggle('speed-preset-active', active);
+        btn.setAttribute('aria-pressed', String(active));
+      });
     }
     if (this.st.pitch !== prev.pitch) {
       this.syncInput('spokn-pitch-slider', this.st.pitch);
@@ -202,6 +214,18 @@ export class FloatingToolbar {
     if (this.st.volume !== prev.volume) {
       this.syncInput('spokn-vol-slider', this.st.volume);
       this.syncSliderFill('spokn-vol-slider', this.st.volume, 0, 1);
+    }
+
+    // Update estimated time remaining on every word advance
+    if (this.st.wordIndex !== prev.wordIndex || this.st.totalWords !== prev.totalWords || this.st.rate !== prev.rate) {
+      const timeEl = this.shadow.getElementById('spokn-time-remaining');
+      if (timeEl) timeEl.textContent = this.formatTimeRemaining();
+    }
+
+    // Update click-mode indicator on the pill
+    if (this.st.mode !== prev.mode) {
+      const pill = this.shadow.getElementById('spokn-pill');
+      pill?.classList.toggle('click-mode-active', this.st.mode === 'click');
     }
   }
 
@@ -222,6 +246,9 @@ export class FloatingToolbar {
     this.populateVoices();
     this.setVoiceHelpLink();
     this.syncAllSliders();
+    // Apply click-mode indicator if already in click mode
+    const pill = this.shadow?.getElementById('spokn-pill');
+    pill?.classList.toggle('click-mode-active', this.st.mode === 'click');
   }
 
   // ─── HTML ────────────────────────────────────────────────────────────────────
@@ -233,10 +260,8 @@ export class FloatingToolbar {
     const pitchPct  = ((pitch  - 0.5) / 1.5)  * 100;
     const volPct    = volume * 100;
 
-    const modeIcon = (m: string) =>
-      m === 'selection' ? ICONS.highlight : ICONS.filetext;
-    const modeLabel = (m: string) =>
-      m === 'selection' ? 'Selection' : 'Full Page';
+    const modeIcon = (_m: string) => '';
+    const modeLabel = (_m: string) => '';
 
     return `
       <div id="spokn-settings" class="${this.settingsOpen ? 'open' : ''}">
@@ -247,13 +272,21 @@ export class FloatingToolbar {
           <div class="settings-row">
             <span class="settings-label">Mode</span>
             <div class="mode-group" role="group" aria-label="Reading mode">
-              ${(['selection', 'page'] as const).map(m => `
-                <button class="mode-btn${mode === m ? ' mode-btn-active' : ''}"
-                  data-mode="${m}" aria-pressed="${mode === m}" title="${modeLabel(m)}">
-                  <span class="mode-icon">${modeIcon(m)}</span>
-                  <span class="mode-label">${modeLabel(m)}</span>
-                </button>
-              `).join('')}
+              <button class="mode-btn${mode === 'selection' ? ' mode-btn-active' : ''}"
+                data-mode="selection" aria-pressed="${mode === 'selection'}" title="Read selected text">
+                <span class="mode-icon">${ICONS.highlight}</span>
+                <span class="mode-label">Selection</span>
+              </button>
+              <button class="mode-btn${mode === 'page' ? ' mode-btn-active' : ''}"
+                data-mode="page" aria-pressed="${mode === 'page'}" title="Read full page">
+                <span class="mode-icon">${ICONS.filetext}</span>
+                <span class="mode-label">Full Page</span>
+              </button>
+              <button class="mode-btn${mode === 'click' ? ' mode-btn-active mode-btn-click' : ''}"
+                data-mode="click" aria-pressed="${mode === 'click'}" title="Click any element to read">
+                <span class="mode-icon">${ICONS.pointer}</span>
+                <span class="mode-label">Click</span>
+              </button>
             </div>
           </div>
 
@@ -286,6 +319,21 @@ export class FloatingToolbar {
               <span class="slider-val">${rate.toFixed(1)}x</span>
             </div>
           </div>
+
+          <div class="speed-presets" role="group" aria-label="Speed presets">
+            ${SPEED_PRESETS.map(p => `
+              <button class="speed-preset-btn${Math.abs(rate - p) < 0.01 ? ' speed-preset-active' : ''}"
+                data-preset="${p}" aria-pressed="${Math.abs(rate - p) < 0.01}" aria-label="${p}x speed">
+                ${p === 1.0 ? '1x' : `${p}x`}
+              </button>
+            `).join('')}
+          </div>
+
+          ${this.st.totalWords > 0 ? `
+          <div class="time-remaining" aria-live="polite">
+            <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+            <span id="spokn-time-remaining">${this.formatTimeRemaining()}</span>
+          </div>` : ''}
 
           <div class="settings-row slider-row">
             <label class="settings-label" for="spokn-pitch-slider">Pitch</label>
@@ -407,7 +455,7 @@ export class FloatingToolbar {
 
       <div id="spokn-pill-wrap">
         <div id="spokn-tooltip" aria-live="polite"></div>
-        <button id="spokn-close" aria-label="Close" title="Close">
+        <button id="spokn-close" aria-label="Close Spokn" title="Close">
           ${ICONS.close}
         </button>
 
@@ -447,40 +495,44 @@ export class FloatingToolbar {
     });
 
     s.getElementById('spokn-settings-toggle')?.addEventListener('click', () => {
-      this.settingsOpen = !this.settingsOpen;
       const panel = s.getElementById('spokn-settings');
       const pill  = s.getElementById('spokn-pill');
       const btn   = s.getElementById('spokn-settings-toggle');
-      if (panel) panel.classList.toggle('open', this.settingsOpen);
-      if (pill)  pill.classList.toggle('settings-open', this.settingsOpen);
-      if (btn) {
-        btn.setAttribute('aria-expanded', String(this.settingsOpen));
-        btn.classList.toggle('btn-active', this.settingsOpen);
-      }
-      // Reposition the settings panel so it stays within the viewport.
-      // After toggling open, measure available space above/below the host
-      // and pin the panel to whichever side has more room.
-      if (this.settingsOpen && panel && this.host) {
-        // Reset first so we can measure natural height
-        panel.style.top = '';
-        panel.style.bottom = '';
-        panel.style.transform = '';
-        requestAnimationFrame(() => {
-          const hostRect   = this.host!.getBoundingClientRect();
-          const panelH     = panel.offsetHeight;
-          const vh         = window.innerHeight;
-          const PADDING    = 8;
 
-          // Ideal: vertically centered on the host
-          let top = hostRect.top + (hostRect.height / 2) - (panelH / 2);
-          // Clamp so it doesn't overflow top or bottom
-          top = Math.max(PADDING, Math.min(top, vh - panelH - PADDING));
+      if (this.settingsOpen) {
+        // Animate out, then hide
+        panel?.classList.add('closing');
+        panel?.addEventListener('animationend', () => {
+          panel.classList.remove('closing', 'open');
+        }, { once: true });
+        this.settingsOpen = false;
+        pill?.classList.remove('settings-open');
+        btn?.setAttribute('aria-expanded', 'false');
+        btn?.classList.remove('btn-active');
+      } else {
+        this.settingsOpen = true;
+        panel?.classList.remove('closing');
+        panel?.classList.add('open');
+        pill?.classList.add('settings-open');
+        btn?.setAttribute('aria-expanded', 'true');
+        btn?.classList.add('btn-active');
 
-          // Convert to position relative to the host element
-          const relativeTop = top - hostRect.top;
-          panel.style.top = `${relativeTop}px`;
-          panel.style.transform = 'none';
-        });
+        // Reposition the settings panel so it stays within the viewport.
+        if (panel && this.host) {
+          panel.style.top = '';
+          panel.style.bottom = '';
+          panel.style.transform = '';
+          requestAnimationFrame(() => {
+            const hostRect = this.host!.getBoundingClientRect();
+            const panelH   = panel.offsetHeight;
+            const vh       = window.innerHeight;
+            const PADDING  = 8;
+            let top = hostRect.top + (hostRect.height / 2) - (panelH / 2);
+            top = Math.max(PADDING, Math.min(top, vh - panelH - PADDING));
+            panel.style.top = `${top - hostRect.top}px`;
+            panel.style.transform = 'none';
+          });
+        }
       }
     });
 
@@ -496,7 +548,14 @@ export class FloatingToolbar {
           const active = (b as HTMLElement).dataset.mode === m;
           b.classList.toggle('mode-btn-active', active);
           b.setAttribute('aria-pressed', String(active));
+          // click mode gets extra styling class
+          if ((b as HTMLElement).dataset.mode === 'click') {
+            b.classList.toggle('mode-btn-click', active);
+          }
         });
+        // Update pill click-mode indicator
+        const pill = s.getElementById('spokn-pill');
+        pill?.classList.toggle('click-mode-active', m === 'click');
         this.cb.onModeChange(m);
       });
     });
@@ -555,6 +614,13 @@ export class FloatingToolbar {
       const el  = s.getElementById('spokn-speed-slider');
       const val = el?.closest('.settings-row')?.querySelector('.slider-val') as HTMLElement | null;
       if (val) val.textContent = `${r.toFixed(1)}x`;
+      // Sync preset buttons
+      s.querySelectorAll<HTMLButtonElement>('.speed-preset-btn').forEach(btn => {
+        const p = parseFloat(btn.dataset.preset ?? '0');
+        const active = Math.abs(r - p) < 0.01;
+        btn.classList.toggle('speed-preset-active', active);
+        btn.setAttribute('aria-pressed', String(active));
+      });
     });
     const speedEl = s.getElementById('spokn-speed-slider') as HTMLInputElement | null;
     if (speedEl) {
@@ -563,6 +629,32 @@ export class FloatingToolbar {
         this.cb.onSpeedChange(r);
       });
     }
+
+    // Speed preset buttons
+    s.querySelectorAll<HTMLButtonElement>('.speed-preset-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const p = parseFloat(btn.dataset.preset ?? '1');
+        const r = Math.round(p * 10) / 10;
+        this.st.rate = r;
+        // Update slider
+        const sliderEl = s.getElementById('spokn-speed-slider') as HTMLInputElement | null;
+        if (sliderEl) {
+          sliderEl.value = String(r);
+          this.syncSliderFill('spokn-speed-slider', r, 0.5, 3.0);
+        }
+        // Update value label
+        const val = s.querySelector<HTMLElement>('#spokn-speed-slider')?.closest('.settings-row')?.querySelector('.slider-val') as HTMLElement | null;
+        if (val) val.textContent = `${r.toFixed(1)}x`;
+        // Update preset active states
+        s.querySelectorAll<HTMLButtonElement>('.speed-preset-btn').forEach(b => {
+          const bp = parseFloat(b.dataset.preset ?? '0');
+          const active = Math.abs(r - bp) < 0.01;
+          b.classList.toggle('speed-preset-active', active);
+          b.setAttribute('aria-pressed', String(active));
+        });
+        this.cb.onSpeedChange(r);
+      });
+    });
 
     this.attachSlider('spokn-pitch-slider', 0.5, 2.0, (v) => {
       const p = Math.round(v * 10) / 10;
@@ -810,6 +902,16 @@ export class FloatingToolbar {
     this.syncSliderFill('spokn-vol-slider',   this.st.volume, 0,   1);
   }
 
+  // ─── Time remaining ───────────────────────────────────────────────────────────
+
+  private formatTimeRemaining(): string {
+    const wordsLeft = Math.max(0, this.st.totalWords - this.st.wordIndex);
+    if (wordsLeft === 0) return '';
+    const minutes = wordsLeft / (AVG_WPM * this.st.rate);
+    if (minutes < 1) return `< 1 min remaining`;
+    return `~${Math.ceil(minutes)} min remaining`;
+  }
+
   // ─── CSS ──────────────────────────────────────────────────────────────────────
 
   // Fix #11 — static method called once to initialise STATIC_CSS
@@ -937,14 +1039,21 @@ export class FloatingToolbar {
         cursor: pointer;
         color: #888;
         opacity: 0;
-        pointer-events: none;
+        /* Keep pointer-events enabled for keyboard but hide visually until hover */
+        pointer-events: auto;
         transition: opacity 0.15s ease, color 0.12s, transform 0.08s;
         z-index: 10;
       }
       #spokn-close svg { width: 14px; height: 14px; }
-      #spokn-pill-wrap:hover #spokn-close { opacity: 1; pointer-events: auto; }
-      #spokn-close:hover { color: #888; }
+      #spokn-pill-wrap:hover #spokn-close,
+      #spokn-close:focus-visible { opacity: 1; }
+      #spokn-close:hover { color: #ccc; }
       #spokn-close:active { transform: translateX(-50%) scale(0.92); }
+      #spokn-close:focus-visible {
+        outline: 2px solid var(--accent);
+        outline-offset: 2px;
+        border-radius: 4px;
+      }
 
       /* ── Toolbar column ──────────────────────────────────────────────────── */
       #spokn-toolbar {
@@ -1050,8 +1159,18 @@ export class FloatingToolbar {
         to   { opacity: 1; transform: translateX(0); }
       }
 
+      @keyframes spokn-settings-out {
+        from { opacity: 1; transform: translateX(0); }
+        to   { opacity: 0; transform: translateX(12px); }
+      }
+
+      #spokn-settings.closing {
+        animation: spokn-settings-out 0.15s ease forwards;
+        pointer-events: none;
+      }
+
       .settings-section {
-        padding: 14px 20px 14px 16px;
+        padding: 14px;
         display: flex;
         flex-direction: column;
         gap: 12px;
@@ -1324,6 +1443,57 @@ export class FloatingToolbar {
         line-height: 1.6;
       }
       .shortcut-desc { font-size: 10px; color: var(--muted); }
+
+      /* ── Speed presets ───────────────────────────────────────────────────── */
+      .speed-presets {
+        display: flex;
+        gap: 4px;
+        flex-wrap: wrap;
+        padding-left: 46px; /* align under slider, past label */
+      }
+      .speed-preset-btn {
+        all: unset;
+        padding: 3px 7px;
+        border-radius: 20px;
+        border: 1px solid var(--border);
+        color: var(--muted);
+        font-size: 10px;
+        font-family: inherit;
+        cursor: pointer;
+        transition: all 0.12s;
+        line-height: 1.4;
+      }
+      .speed-preset-btn:hover { border-color: var(--accent); color: var(--text); }
+      .speed-preset-active {
+        background: var(--accent);
+        border-color: var(--accent);
+        color: #fff;
+        font-weight: 600;
+      }
+
+      /* ── Time remaining ──────────────────────────────────────────────────── */
+      .time-remaining {
+        display: flex;
+        align-items: center;
+        gap: 4px;
+        padding-left: 46px;
+        color: var(--muted);
+        font-size: 10px;
+        margin-top: -4px;
+      }
+      .time-remaining svg { flex-shrink: 0; opacity: 0.7; }
+
+      /* ── Click-mode active indicator ─────────────────────────────────────── */
+      #spokn-pill.click-mode-active {
+        box-shadow: 0 0 0 2px rgba(2,119,212,0.5), 0 2px 12px rgba(0,0,0,0.3);
+      }
+      #spokn-pill.click-mode-active #spokn-playpause {
+        animation: spokn-click-pulse 2s ease-in-out infinite;
+      }
+      @keyframes spokn-click-pulse {
+        0%, 100% { box-shadow: 0 0 0 0 rgba(2,119,212,0.5); }
+        50%       { box-shadow: 0 0 0 5px rgba(2,119,212,0); }
+      }
 
       /* ── Ko-fi ───────────────────────────────────────────────────────────── */
       #spokn-kofi { display: flex; align-items: center; justify-content: center; }

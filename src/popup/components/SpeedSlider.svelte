@@ -10,7 +10,7 @@
   const MAX = 3.0;
   const STEP = 0.1;
 
-  const PRESETS = [0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0, 2.5, 3.0];
+  const PRESETS = [0.5, 0.8, 1.0, 1.5, 2.0, 2.5, 3.0];
 
   function handleInput(e: Event) {
     const input = e.target as HTMLInputElement;

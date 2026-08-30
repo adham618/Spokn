@@ -48,12 +48,29 @@
 }
 
 /* ── Word hover highlight ────────────────────────────────────────────────── */
+/* Only show hover highlight when a theme is actually set (not 'none').
+   When --spokn-word-bg is transparent the highlight would be invisible anyway,
+   but we also suppress the padding/margin shift so layout is unaffected. */
 .spokn-word:hover {
   background-color: var(--spokn-word-bg) !important;
   color: var(--spokn-word-color) !important;
   border-radius: 3px;
   padding: 1px 2px;
   margin: -1px -2px;
+  cursor: default;
+}
+
+/* When theme is 'none', --spokn-word-bg is transparent — suppress the layout
+   side-effects (padding/margin) so hovered words don't shift the surrounding text. */
+:root:has(#spokn-highlight-theme) .spokn-word:hover {
+  /* overridden below when transparent */
+}
+.spokn-word-no-hover:hover,
+body.spokn-theme-none .spokn-word:hover {
+  background-color: transparent !important;
+  color: inherit !important;
+  padding: 0 !important;
+  margin: 0 !important;
   cursor: default;
 }
 

@@ -120,8 +120,12 @@ export function applyTheme(themeId: string): void {
       --spokn-sentence-bg: ${theme.sentenceBg};
     }
   `;
+
+  // Toggle body class so content.css can suppress hover effects for 'none' theme
+  document.body.classList.toggle('spokn-theme-none', themeId === 'none');
 }
 
 export function removeTheme(): void {
   document.getElementById(STYLE_ID)?.remove();
+  document.body.classList.remove('spokn-theme-none');
 }

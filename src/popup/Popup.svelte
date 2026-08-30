@@ -152,8 +152,14 @@
 
   // ── Reset ────────────────────────────────────────────────────────────────
 
-  async function handleReset() {
-    if (!confirm('Reset all Spokn settings to defaults?')) return;
+  let resetConfirmVisible = $state(false);
+
+  function handleResetClick() {
+    resetConfirmVisible = true;
+  }
+
+  async function handleResetConfirm() {
+    resetConfirmVisible = false;
     await chrome.storage.sync.clear();
     // Clear saved toolbar position on the active tab
     try {
@@ -167,6 +173,10 @@
     } catch { /* ignore — scripting may not be available on all pages */ }
     playbackState = { ...DEFAULT_STATE };
     toast('Settings reset to defaults');
+  }
+
+  function handleResetCancel() {
+    resetConfirmVisible = false;
   }
 </script>
 
@@ -240,11 +250,11 @@
     <p class="shortcuts-title">Keyboard shortcuts</p>
     <div class="shortcut-list">
       {#if isMac}
-        <span class="shortcut"><kbd>⌘</kbd>+<kbd>Shift</kbd>+<kbd>9</kbd> Play / Pause</span>
+        <span class="shortcut"><kbd>⌘</kbd>+<kbd>Shift</kbd>+<kbd>K</kbd> Play / Pause</span>
         <span class="shortcut"><kbd>⌘</kbd>+<kbd>Shift</kbd>+<kbd>0</kbd> Stop</span>
         <span class="shortcut"><kbd>⌘</kbd>+<kbd>Shift</kbd>+<kbd>8</kbd> Read selection</span>
       {:else}
-        <span class="shortcut"><kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>9</kbd> Play / Pause</span>
+        <span class="shortcut"><kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>K</kbd> Play / Pause</span>
         <span class="shortcut"><kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>0</kbd> Stop</span>
         <span class="shortcut"><kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>8</kbd> Read selection</span>
       {/if}
@@ -264,7 +274,17 @@
       Support me on Ko-fi
     </a>
     <div class="footer-right">
-      <button class="reset-btn" onclick={handleReset} title="Reset all settings to defaults">Reset</button>
+      {#if resetConfirmVisible}
+        <div class="reset-confirm" role="group" aria-label="Confirm reset">
+          <span class="reset-confirm-text">Reset all settings?</span>
+          <div class="reset-confirm-btns">
+            <button class="reset-confirm-yes" onclick={handleResetConfirm}>Yes</button>
+            <button class="reset-confirm-no" onclick={handleResetCancel}>Cancel</button>
+          </div>
+        </div>
+      {:else}
+        <button class="reset-btn" onclick={handleResetClick} title="Reset all settings to defaults">Reset</button>
+      {/if}
       <span class="version">v{import.meta.env.VITE_APP_VERSION}</span>
     </div>
   </footer>
@@ -451,6 +471,43 @@
     transition: opacity 0.15s;
   }
   .reset-btn:hover { opacity: 1; text-decoration: underline; }
+
+  .reset-confirm {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 4px;
+    animation: fadeIn 0.12s ease;
+  }
+  .reset-confirm-text {
+    font-size: 10px;
+    color: #f87171;
+  }
+  .reset-confirm-btns {
+    display: flex;
+    gap: 4px;
+  }
+  .reset-confirm-yes,
+  .reset-confirm-no {
+    border: none;
+    border-radius: 4px;
+    padding: 2px 8px;
+    font-size: 10px;
+    font-family: inherit;
+    cursor: pointer;
+    transition: all 0.12s;
+  }
+  .reset-confirm-yes {
+    background: rgba(239,68,68,0.7);
+    color: #fff;
+  }
+  .reset-confirm-yes:hover { background: #ef4444; }
+  .reset-confirm-no {
+    background: rgba(255,255,255,0.07);
+    color: #94a3b8;
+    border: 1px solid rgba(255,255,255,0.1);
+  }
+  .reset-confirm-no:hover { background: rgba(255,255,255,0.12); }
 
   .kofi-btn {
     display: inline-flex;
