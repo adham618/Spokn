@@ -5,6 +5,14 @@ import { DEFAULT_STATE } from '../shared/types.js';
 let globalState: PlaybackState = { ...DEFAULT_STATE };
 let activeTabId: number | null = null;
 
+// Seed mode from storage on startup so the keyboard shortcut fallback uses
+// the user's saved preference rather than the DEFAULT_STATE 'page' value.
+chrome.storage.sync.get('mode').then(({ mode }) => {
+  if (mode && mode !== 'selection') {
+    globalState.mode = mode as PlaybackState['mode'];
+  }
+}).catch(() => {});
+
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 async function getActiveTab(): Promise<chrome.tabs.Tab | null> {
@@ -155,8 +163,13 @@ chrome.commands.onCommand.addListener(async (command) => {
       // Toolbar is already open — ask the content script for the live state
       // instead of relying on globalState which can be stale after a tab switch.
       const liveRes = await sendToTab(tabId, { type: 'GET_STATE' });
-      const liveStatus = liveRes.success ? (liveRes as any).state?.status : globalState.status;
-      const liveMode   = liveRes.success ? (liveRes as any).state?.mode   : globalState.mode;
+      // Prefer the live state from the content script; only fall back to
+      // globalState when the content script is unreachable. Never fall back
+      // to 'page' directly — that would silently override a saved mode (e.g.
+      // 'click') whenever globalState was reset by a tab-switch event.
+      const liveState  = liveRes.success ? (liveRes as any).state as typeof globalState : null;
+      const liveStatus = liveState?.status ?? globalState.status;
+      const liveMode   = liveState?.mode   ?? globalState.mode;
 
       if (liveStatus === 'playing') {
         await sendToTab(tabId, { type: 'PAUSE' });
@@ -194,7 +207,8 @@ chrome.tabs.onRemoved.addListener((tabId) => {
 
 chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
   if (tabId === activeTabId && changeInfo.status === 'loading') {
-    globalState = { ...DEFAULT_STATE };
+    // Page navigation — reset playback but preserve mode preference
+    globalState = { ...DEFAULT_STATE, mode: globalState.mode };
   }
 });
 
@@ -203,6 +217,10 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
 chrome.tabs.onActivated.addListener(({ tabId }) => {
   if (tabId !== activeTabId) {
     activeTabId = tabId;
-    globalState = { ...DEFAULT_STATE };
+    // Reset playback state but preserve mode — mode is a user preference that
+    // persists in storage and should not be wiped by a tab switch. Losing it
+    // here causes the keyboard shortcut to fall back to 'page' when the content
+    // script is briefly unreachable after switching tabs.
+    globalState = { ...DEFAULT_STATE, mode: globalState.mode };
   }
 });

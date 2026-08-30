@@ -316,8 +316,13 @@ async function startReading(
         // Use state.rate/pitch/volume instead of the closed-over locals so that
         // any slider changes made while paused are reflected when playback resumes
         // (the closure captures the values at startReading() time, not the current ones).
+        // Do NOT overwrite state.mode here — `mode` is the walk strategy
+        // ('page' when click-to-read triggers startReading('page',...)) which
+        // is different from the user's selected UI mode ('click'). Overwriting
+        // it would silently switch the toolbar back to Full Page after the
+        // first click-to-read session ends.
         setState({
-          status: 'playing', mode, voiceName,
+          status: 'playing', voiceName,
           rate: state.rate, pitch: state.pitch, volume: state.volume,
           totalWords: result.words.length,
           wordIndex: startWordIndex,
