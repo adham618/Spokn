@@ -78,7 +78,7 @@ Spokn is a free, fully offline text-to-speech extension that reads any webpage a
 - **Pitch and volume control**
 - **All system voices** — uses every voice installed on your device, grouped by language
 - **Works on any webpage** — articles, blogs, documentation, local HTML files, iframes
-- **Keyboard shortcuts** — Alt+Shift+P to play/pause, Alt+Shift+S to stop, Alt+Shift+R to read selection
+- **Keyboard shortcuts** — Alt+Shift+K to play/pause, Alt+Shift+0 to stop, Alt+Shift+8 to read selection (Mac: ⌘+Shift+K / ⌘+Shift+0 / ⌘+Shift+8)
 - **Persistent settings** — your voice, speed, and theme are remembered across sessions
 
 ---
@@ -111,11 +111,11 @@ After adding voices, restart Chrome and reopen the Spokn settings panel — new 
 
 ### Keyboard shortcuts
 
-| Shortcut | Action |
-|---|---|
-| Alt+Shift+P | Play / Pause |
-| Alt+Shift+S | Stop |
-| Alt+Shift+R | Read selected text |
+| Shortcut (Windows/Linux) | Shortcut (Mac) | Action |
+|---|---|---|
+| Alt+Shift+K | ⌘+Shift+K | Play / Pause |
+| Alt+Shift+0 | ⌘+Shift+0 | Stop |
+| Alt+Shift+8 | ⌘+Shift+8 | Read selected text |
 
 ---
 
