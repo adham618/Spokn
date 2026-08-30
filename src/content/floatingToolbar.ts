@@ -23,6 +23,9 @@ export interface ToolbarCallbacks {
   onThemeChange: (themeId: string) => void;
   onHoverBorderToggle: (enabled: boolean) => void;
   onReset: () => void;
+  onFavoritesChange: (favorites: string[]) => void;
+  /** Optional getter so populateVoices can read the live voice name from content.ts */
+  getVoiceName?: () => string;
 }
 
 export interface ToolbarState {
@@ -38,6 +41,7 @@ export interface ToolbarState {
   totalWords: number;
   highlightTheme: string;
   hoverBorderEnabled: boolean;
+  favoriteVoices: string[];
 }
 
 // ─── SVG icon library ─────────────────────────────────────────────────────────
@@ -290,22 +294,49 @@ export class FloatingToolbar {
             </div>
           </div>
 
-          <div class="settings-row">
-            <label class="settings-label" for="spokn-voice-select">Voice</label>
-            <div class="select-wrap">
-              <select id="spokn-voice-select" aria-label="Select voice">
-                <option value="">Loading voices…</option>
-              </select>
-              <span class="select-arrow" aria-hidden="true"><svg width="10" height="10" viewBox="0 0 10 6" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M1 1l4 4 4-4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+          <!-- ── Voice picker ─────────────────────────────────────────────── -->
+          <div class="voice-picker">
+
+            <!-- Tab bar -->
+            <div class="vp-tabs" role="tablist" aria-label="Voice picker">
+              <button class="vp-tab vp-tab-active" id="vp-tab-all"
+                role="tab" aria-selected="true" aria-controls="vp-panel-all">All</button>
+              <button class="vp-tab" id="vp-tab-favs"
+                role="tab" aria-selected="false" aria-controls="vp-panel-favs">
+                ★ Favorites<span id="vp-fav-count" class="vp-fav-count"></span>
+              </button>
+
             </div>
-          </div>
-          <div class="voice-hint-row">
-            <span class="voice-hint-icon" aria-hidden="true">
-              <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
-            </span>
-            <a id="spokn-voice-help-link" class="voice-hint-link" href="#" target="_blank" rel="noopener noreferrer">
-              How to add more voices?
-            </a>
+
+            <!-- Search (shared) -->
+            <div class="vp-search-wrap">
+              <svg class="vp-search-icon" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+              <input id="vp-search" type="search" placeholder="Search voices or language…"
+                autocomplete="off" spellcheck="false" aria-label="Search voices" />
+              <button id="vp-search-clear" class="vp-search-clear" aria-label="Clear search" style="display:none">✕</button>
+            </div>
+
+            <!-- All tab panel -->
+            <div id="vp-panel-all" class="vp-panel" role="tabpanel" aria-labelledby="vp-tab-all">
+              <div id="vp-list-all" class="vp-list" role="listbox" aria-label="All voices"></div>
+            </div>
+
+            <!-- Favorites tab panel -->
+            <div id="vp-panel-favs" class="vp-panel" role="tabpanel" aria-labelledby="vp-tab-favs" style="display:none">
+              <div id="vp-list-favs" class="vp-list" role="listbox" aria-label="Favorite voices"></div>
+            </div>
+
+            <!-- Selected voice meta -->
+            <div class="vp-selected-meta">
+              <span id="vp-selected-name" class="vp-selected-name"></span>
+              <span id="vp-selected-lang" class="vp-selected-lang"></span>
+            </div>
+
+            <!-- Help link -->
+            <div class="voice-hint-row">
+              <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+              <a id="spokn-voice-help-link" class="voice-hint-link" href="#" target="_blank" rel="noopener noreferrer">How to add more voices?</a>
+            </div>
           </div>
 
           <div class="settings-row slider-row">
@@ -560,10 +591,22 @@ export class FloatingToolbar {
       });
     });
 
-    s.getElementById('spokn-voice-select')?.addEventListener('change', (e) => {
-      const val = (e.target as HTMLSelectElement).value;
-      this.st.voiceName = val;
-      this.cb.onVoiceChange(val);
+    // ── Voice picker tabs ────────────────────────────────────────────────────
+    s.getElementById('vp-tab-all')?.addEventListener('click', () => this.setVoiceTab('all'));
+    s.getElementById('vp-tab-favs')?.addEventListener('click', () => this.setVoiceTab('favs'));
+
+    // Search
+    const vpSearch = s.getElementById('vp-search') as HTMLInputElement | null;
+    const vpClear  = s.getElementById('vp-search-clear') as HTMLButtonElement | null;
+    vpSearch?.addEventListener('input', () => {
+      if (vpClear) vpClear.style.display = vpSearch.value ? 'flex' : 'none';
+      this.renderVoiceList();
+    });
+    vpClear?.addEventListener('click', () => {
+      if (vpSearch) vpSearch.value = '';
+      if (vpClear) vpClear.style.display = 'none';
+      this.renderVoiceList();
+      vpSearch?.focus();
     });
 
     // Theme swatches
@@ -773,51 +816,260 @@ export class FloatingToolbar {
 
   // ─── Voices ──────────────────────────────────────────────────────────────────
 
+  private langNames = new Intl.DisplayNames([navigator.language, 'en'], { type: 'language' });
+  private allVoices: SpeechSynthesisVoice[] = [];
+  private activeVoiceTab: 'all' | 'favs' = 'all';
+
+  private getLangLabel(tag: string): string {
+    try { return this.langNames.of(tag) ?? tag; } catch { return tag; }
+  }
+
+  private getQuery(): string {
+    const el = this.shadow?.getElementById('vp-search') as HTMLInputElement | null;
+    return el?.value.trim().toLowerCase() ?? '';
+  }
+
+  private setVoiceTab(tab: 'all' | 'favs'): void {
+    this.activeVoiceTab = tab;
+    const s = this.shadow!;
+    const tabAll  = s.getElementById('vp-tab-all');
+    const tabFavs = s.getElementById('vp-tab-favs');
+    const panelAll  = s.getElementById('vp-panel-all');
+    const panelFavs = s.getElementById('vp-panel-favs');
+    const isAll = tab === 'all';
+    tabAll?.classList.toggle('vp-tab-active', isAll);
+    tabFavs?.classList.toggle('vp-tab-active', !isAll);
+    tabAll?.setAttribute('aria-selected', String(isAll));
+    tabFavs?.setAttribute('aria-selected', String(!isAll));
+    if (panelAll)  panelAll.style.display  = isAll  ? 'block' : 'none';
+    if (panelFavs) panelFavs.style.display = !isAll ? 'block' : 'none';
+    this.renderVoiceList();
+  }
+
+  /** Render (or re-render) the active tab's voice list. */
+  private renderVoiceList(): void {
+    const s = this.shadow;
+    if (!s || this.allVoices.length === 0) return;
+
+    const q    = this.getQuery();
+    const favs = this.st.favoriteVoices ?? [];
+
+    const matched = q
+      ? this.allVoices.filter(v =>
+          v.name.toLowerCase().includes(q) ||
+          v.lang.toLowerCase().includes(q) ||
+          this.getLangLabel(v.lang).toLowerCase().includes(q)
+        )
+      : this.allVoices;
+
+    // Update fav badge count
+    const countEl = s.getElementById('vp-fav-count');
+    if (countEl) countEl.textContent = favs.length > 0 ? ` (${favs.length})` : '';
+
+    if (this.activeVoiceTab === 'all') {
+      this.renderListAll(s, matched, favs, q);
+    } else {
+      this.renderListFavs(s, matched, favs, q);
+    }
+
+    this.updateSelectedMeta();
+  }
+
+  private renderListAll(
+    s: ShadowRoot,
+    matched: SpeechSynthesisVoice[],
+    favs: string[],
+    query: string,
+  ): void {
+    const container = s.getElementById('vp-list-all');
+    if (!container) return;
+    container.innerHTML = '';
+
+    if (matched.length === 0) {
+      container.appendChild(this.emptyState(query ? `No voices match "${query}"` : 'No voices available'));
+      return;
+    }
+
+    // Group by language, sort by display label
+    const groups = new Map<string, SpeechSynthesisVoice[]>();
+    for (const v of matched) {
+      const tag = v.lang || 'Unknown';
+      if (!groups.has(tag)) groups.set(tag, []);
+      groups.get(tag)!.push(v);
+    }
+
+    Array.from(groups.entries())
+      .sort(([a], [b]) => this.getLangLabel(a).localeCompare(this.getLangLabel(b)))
+      .forEach(([tag, voices]) => {
+        // Language group header
+        const hdr = document.createElement('div');
+        hdr.className = 'vp-group-header';
+        hdr.textContent = this.getLangLabel(tag);
+        container.appendChild(hdr);
+
+        for (const v of voices) {
+          container.appendChild(this.voiceRow(v, favs));
+        }
+      });
+  }
+
+  private renderListFavs(
+    s: ShadowRoot,
+    matched: SpeechSynthesisVoice[],
+    favs: string[],
+    query: string,
+  ): void {
+    const container = s.getElementById('vp-list-favs');
+    if (!container) return;
+    container.innerHTML = '';
+
+    const favMatched = matched.filter(v => favs.includes(v.name));
+
+    if (favMatched.length === 0) {
+      const msg = query
+        ? `No favorites match "${query}"`
+        : 'No favorites yet — star a voice on the All tab';
+      container.appendChild(this.emptyState(msg));
+      return;
+    }
+
+    for (const v of favMatched) {
+      container.appendChild(this.voiceRow(v, favs));
+    }
+  }
+
+  /** Build a single voice row element. */
+  private voiceRow(v: SpeechSynthesisVoice, favs: string[]): HTMLElement {
+    const isSel = v.name === this.st.voiceName;
+    const isFav = favs.includes(v.name);
+
+    const row = document.createElement('div');
+    row.className = 'vp-row' + (isSel ? ' vp-row-selected' : '');
+    row.setAttribute('role', 'option');
+    row.setAttribute('aria-selected', String(isSel));
+    row.dataset.voice = v.name;
+
+    // Name + badge
+    const info = document.createElement('div');
+    info.className = 'vp-row-info';
+
+    const name = document.createElement('span');
+    name.className = 'vp-row-name';
+    name.textContent = v.name;
+    info.appendChild(name);
+
+    if (!v.localService) {
+      const badge = document.createElement('span');
+      badge.className = 'vp-badge-cloud';
+      badge.textContent = '☁';
+      badge.title = 'Network voice';
+      info.appendChild(badge);
+    }
+
+    // Star button
+    const star = document.createElement('button');
+    star.className = 'vp-star' + (isFav ? ' vp-star-active' : '');
+    star.textContent = isFav ? '★' : '☆';
+    star.setAttribute('aria-label', isFav ? `Unpin ${v.name}` : `Pin ${v.name}`);
+    star.title = isFav ? 'Remove from favorites' : 'Add to favorites';
+    star.dataset.voiceStar = v.name;
+
+    row.appendChild(info);
+    row.appendChild(star);
+
+    // Click row → select voice
+    row.addEventListener('click', (e) => {
+      if ((e.target as HTMLElement).dataset.voiceStar) return; // handled by star
+      this.selectVoice(v.name);
+    });
+
+    // Click star → toggle favorite
+    star.addEventListener('click', (e) => {
+      e.stopPropagation();
+      this.toggleFavorite(v.name);
+    });
+
+    return row;
+  }
+
+  private emptyState(msg: string): HTMLElement {
+    const el = document.createElement('div');
+    el.className = 'vp-empty';
+    el.textContent = msg;
+    return el;
+  }
+
+  private selectVoice(name: string): void {
+    this.st.voiceName = name;
+    this.cb.onVoiceChange(name);
+    // Update selected styling on all rows without full re-render
+    this.shadow?.querySelectorAll<HTMLElement>('.vp-row').forEach(r => {
+      const active = r.dataset.voice === name;
+      r.classList.toggle('vp-row-selected', active);
+      r.setAttribute('aria-selected', String(active));
+    });
+    this.updateSelectedMeta();
+    // Scroll selected row into view
+    const sel = this.shadow?.querySelector<HTMLElement>('.vp-row-selected');
+    sel?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+  }
+
+  private toggleFavorite(name: string): void {
+    const favs = this.st.favoriteVoices ?? [];
+    const isFav = favs.includes(name);
+    const next = isFav ? favs.filter(n => n !== name) : [...favs, name];
+    this.st.favoriteVoices = next;
+    this.cb.onFavoritesChange(next);
+    // Re-render current tab to reflect change
+    this.renderVoiceList();
+    // If we're on the favs tab and just unpinned the last one, no need to switch
+  }
+
+  private updateSelectedMeta(): void {
+    const s = this.shadow;
+    if (!s) return;
+    const voice = this.allVoices.find(v => v.name === this.st.voiceName);
+    const nameEl = s.getElementById('vp-selected-name');
+    const langEl = s.getElementById('vp-selected-lang');
+    if (nameEl) nameEl.textContent = voice ? voice.name : '';
+    if (langEl) langEl.textContent = voice
+      ? this.getLangLabel(voice.lang) + (voice.localService ? '' : ' · Network ☁')
+      : '';
+  }
+
   private populateVoices(): void {
     const doPopulate = () => {
       const all = speechSynthesis.getVoices();
       if (all.length === 0) return;
-      const select = this.shadow?.getElementById('spokn-voice-select') as HTMLSelectElement | null;
-      if (!select) return;
 
-      const seen   = new Set<string>();
-      const unique = all.filter(v => { if (seen.has(v.name)) return false; seen.add(v.name); return true; });
+      const seen = new Set<string>();
+      this.allVoices = all.filter(v => {
+        if (seen.has(v.name)) return false;
+        seen.add(v.name);
+        return true;
+      });
 
-      const groups = new Map<string, SpeechSynthesisVoice[]>();
-      for (const v of unique) {
-        const lang = v.lang || 'Unknown';
-        if (!groups.has(lang)) groups.set(lang, []);
-        groups.get(lang)!.push(v);
-      }
-
-      select.innerHTML = '';
-      Array.from(groups.entries())
-        .sort(([a], [b]) => a.localeCompare(b))
-        .forEach(([lang, voices]) => {
-          const grp = document.createElement('optgroup');
-          grp.label = lang;
-          for (const v of voices) {
-            const opt = document.createElement('option');
-            opt.value = v.name;
-            opt.textContent = v.name + (v.localService ? '' : ' (cloud)');
-            if (v.name === this.st.voiceName) opt.selected = true;
-            grp.appendChild(opt);
-          }
-          select.appendChild(grp);
-        });
-
-      // Fix #10 — only auto-select a default voice when there is no saved preference
-      // AND the saved voice name doesn't match any available voice.
-      const savedVoiceAvailable = this.st.voiceName && unique.some(v => v.name === this.st.voiceName);
-      if (!savedVoiceAvailable && unique.length > 0) {
-        const preferred = unique.find(v => v.lang.startsWith('en') && v.localService)
-          ?? unique.find(v => v.lang.startsWith('en')) ?? unique[0];
+      // Sync this.st.voiceName with whatever the content script has now —
+      // it may have been set from storage AFTER the toolbar was constructed.
+      // This prevents populateVoices from clobbering a valid saved voice
+      // just because this.st.voiceName was '' at construction time.
+      const liveVoice = this.cb.getVoiceName?.() ?? this.st.voiceName;
+      if (liveVoice && this.allVoices.some(v => v.name === liveVoice)) {
+        // Saved voice is available — sync it into st without firing onVoiceChange
+        this.st.voiceName = liveVoice;
+      } else if (!liveVoice || !this.allVoices.some(v => v.name === liveVoice)) {
+        // No saved voice or it's not in the list — auto-pick
+        const preferred =
+          this.allVoices.find(v => v.lang.startsWith('en') && v.localService) ??
+          this.allVoices.find(v => v.lang.startsWith('en')) ??
+          this.allVoices[0];
         if (preferred) {
-          select.value = preferred.name;
           this.st.voiceName = preferred.name;
           this.cb.onVoiceChange(preferred.name);
         }
       }
+
+      this.renderVoiceList();
     };
 
     doPopulate();
@@ -1243,15 +1495,237 @@ export class FloatingToolbar {
       .mode-icon { display: flex; align-items: center; }
       .mode-icon svg { width: 12px; height: 12px; }
 
+      /* ── Voice picker ────────────────────────────────────────────────────── */
+      .voice-picker {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+      }
+
+      /* Tabs */
+      .vp-tabs {
+        display: flex;
+        gap: 4px;
+        background: rgba(0,0,0,0.2);
+        border-radius: 8px;
+        padding: 3px;
+      }
+      .vp-tab {
+        all: unset;
+        flex: 1;
+        text-align: center;
+        padding: 5px 6px;
+        border-radius: 6px;
+        font-size: 11px;
+        font-weight: 500;
+        color: var(--muted);
+        cursor: pointer;
+        transition: all 0.15s;
+        font-family: inherit;
+        white-space: nowrap;
+      }
+      .vp-tab:hover { color: var(--text); background: rgba(255,255,255,0.05); }
+      .vp-tab-active {
+        background: var(--accent);
+        color: #fff;
+        font-weight: 600;
+      }
+      .vp-tab-active:hover { background: var(--accent); color: #fff; }
+      .vp-fav-count {
+        display: inline-block;
+        font-size: 10px;
+        opacity: 0.85;
+      }
+
+      /* Search */
+      .vp-search-wrap {
+        position: relative;
+        display: flex;
+        align-items: center;
+      }
+      .vp-search-icon {
+        position: absolute;
+        left: 9px;
+        color: var(--subtle);
+        pointer-events: none;
+        flex-shrink: 0;
+      }
+      #vp-search {
+        width: 100%;
+        padding: 6px 28px 6px 28px;
+        background: var(--surface);
+        color: var(--text);
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        font-size: 11px;
+        font-family: inherit;
+        outline: none;
+        -webkit-appearance: none;
+        appearance: none;
+        transition: border-color 0.15s;
+      }
+      #vp-search::-webkit-search-decoration,
+      #vp-search::-webkit-search-cancel-button { display: none; }
+      #vp-search:focus { border-color: var(--accent); }
+      #vp-search::placeholder { color: var(--subtle); }
+      .vp-search-clear {
+        all: unset;
+        position: absolute;
+        right: 8px;
+        color: var(--subtle);
+        font-size: 10px;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        width: 16px;
+        height: 16px;
+        border-radius: 50%;
+        transition: color 0.12s, background 0.12s;
+      }
+      .vp-search-clear:hover { color: var(--text); background: rgba(255,255,255,0.08); }
+
+      /* Panel + list */
+      .vp-panel { }
+      .vp-list {
+        height: 168px;
+        overflow-y: auto;
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        background: rgba(0,0,0,0.15);
+        scrollbar-width: thin;
+        scrollbar-color: rgba(255,255,255,0.12) transparent;
+      }
+      .vp-list::-webkit-scrollbar { width: 4px; }
+      .vp-list::-webkit-scrollbar-track { background: transparent; }
+      .vp-list::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.12); border-radius: 4px; }
+      .vp-list::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.22); }
+
+      /* Language group header */
+      .vp-group-header {
+        padding: 6px 10px 3px;
+        font-size: 9px;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.1em;
+        color: var(--subtle);
+        user-select: none;
+        position: sticky;
+        top: 0;
+        background: #181a1f;
+        z-index: 1;
+      }
+
+      /* Voice row */
+      .vp-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 6px 8px 6px 10px;
+        cursor: pointer;
+        border-radius: 0;
+        transition: background 0.1s;
+        gap: 6px;
+      }
+      .vp-row:hover { background: rgba(255,255,255,0.06); }
+      .vp-row-selected {
+        background: var(--accent-dim) !important;
+      }
+      .vp-row-selected .vp-row-name {
+        color: var(--text);
+        font-weight: 600;
+      }
+      .vp-row-info {
+        display: flex;
+        align-items: center;
+        gap: 5px;
+        min-width: 0;
+        flex: 1;
+        overflow: hidden;
+      }
+      .vp-row-name {
+        font-size: 11.5px;
+        color: var(--muted);
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .vp-badge-cloud {
+        font-size: 10px;
+        color: var(--subtle);
+        flex-shrink: 0;
+        opacity: 0.7;
+      }
+
+      /* Star button per row */
+      .vp-star {
+        all: unset;
+        font-size: 14px;
+        color: var(--subtle);
+        cursor: pointer;
+        flex-shrink: 0;
+        line-height: 1;
+        padding: 2px 3px;
+        border-radius: 4px;
+        transition: color 0.12s, background 0.1s, transform 0.1s;
+        opacity: 0;
+      }
+      .vp-row:hover .vp-star { opacity: 1; }
+      .vp-star-active {
+        color: #fbbf24 !important;
+        opacity: 1 !important;
+      }
+      .vp-star:hover { color: #fbbf24; background: rgba(251,191,36,0.12); transform: scale(1.15); }
+
+      /* Empty state */
+      .vp-empty {
+        padding: 24px 12px;
+        text-align: center;
+        font-size: 11px;
+        color: var(--subtle);
+        line-height: 1.5;
+      }
+
+      /* Selected meta */
+      .vp-selected-meta {
+        display: flex;
+        align-items: baseline;
+        gap: 6px;
+        min-height: 14px;
+        padding: 0 2px;
+      }
+      .vp-selected-name {
+        font-size: 11px;
+        font-weight: 600;
+        color: var(--text);
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        max-width: 60%;
+      }
+      .vp-selected-lang {
+        font-size: 10px;
+        color: var(--subtle);
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+
       /* ── Voice hint ──────────────────────────────────────────────────────── */
       .voice-hint-row {
         display: flex;
         align-items: center;
         gap: 4px;
-        padding-left: 56px; /* align under the select, past the label width + gap */
-        margin-top: -6px;
+        margin-top: -2px;
       }
-      .voice-hint-icon { display: flex; align-items: center; color: var(--muted); flex-shrink: 0; }
+
+      /* ── Voice hint ──────────────────────────────────────────────────────── */
+      .voice-hint-row {
+        display: flex;
+        align-items: center;
+        gap: 4px;
+        margin-top: -2px;
+      }
       .voice-hint-link {
         font-size: 10px;
         color: var(--accent);

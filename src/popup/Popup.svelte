@@ -11,6 +11,7 @@
 
   // ── Reactive state ───────────────────────────────────────────────────────
   let playbackState: PlaybackState = $state({ ...DEFAULT_STATE });
+  let favoriteVoices: string[] = $state([]);
   let settingsOpen = $state(false);
   let toastMsg = $state('');
   let toastTimer: ReturnType<typeof setTimeout> | null = null;
@@ -53,13 +54,14 @@
     } catch { /* background may not be ready */ }
 
     // Pull settings from storage
-    const stored = await chrome.storage.sync.get(['voiceName', 'rate', 'pitch', 'volume', 'mode']);
+    const stored = await chrome.storage.sync.get(['voiceName', 'rate', 'pitch', 'volume', 'mode', 'favoriteVoices']);
     if (stored.voiceName)  playbackState.voiceName = stored.voiceName as string;
     if (stored.rate != null) playbackState.rate = stored.rate as number;
     if (stored.pitch != null) playbackState.pitch = stored.pitch as number;
     if (stored.volume != null) playbackState.volume = stored.volume as number;
     // 'selection' is a transient mode — don't restore it across sessions
     if (stored.mode && stored.mode !== 'selection') playbackState.mode = stored.mode as ReadingMode;
+    if (Array.isArray(stored.favoriteVoices)) favoriteVoices = stored.favoriteVoices as string[];
 
     // Listen for state updates pushed from content script via background
     chrome.runtime.onMessage.addListener(handleBackgroundMessage);
@@ -127,6 +129,12 @@
   async function handleVoiceChange(voiceName: string) {
     playbackState = { ...playbackState, voiceName };
     await sendToTab({ type: 'SET_VOICE', voiceName });
+    await chrome.storage.sync.set({ voiceName });
+  }
+
+  async function handleFavoritesChange(favorites: string[]) {
+    favoriteVoices = favorites;
+    await chrome.storage.sync.set({ favoriteVoices: favorites });
   }
 
   async function handleSpeedChange(rate: number) {
@@ -172,6 +180,7 @@
       }
     } catch { /* ignore — scripting may not be available on all pages */ }
     playbackState = { ...DEFAULT_STATE };
+    favoriteVoices = [];
     toast('Settings reset to defaults');
   }
 
@@ -224,7 +233,9 @@
       <div class="settings-grid">
         <VoicePicker
           value={playbackState.voiceName}
+          favorites={favoriteVoices}
           onchange={handleVoiceChange}
+          onfavoriteschange={handleFavoritesChange}
         />
 
         <SpeedSlider

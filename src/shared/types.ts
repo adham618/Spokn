@@ -21,6 +21,7 @@ export interface SpoknSettings {
   pitch: number;
   volume: number;
   mode: ReadingMode;
+  favoriteVoices: string[];
 }
 
 export const DEFAULT_SETTINGS: SpoknSettings = {
@@ -29,6 +30,7 @@ export const DEFAULT_SETTINGS: SpoknSettings = {
   pitch: 1.0,
   volume: 1.0,
   mode: 'page',
+  favoriteVoices: [],
 };
 
 export const DEFAULT_STATE: PlaybackState = {

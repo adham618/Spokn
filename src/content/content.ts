@@ -27,6 +27,7 @@ let state: PlaybackState = { ...DEFAULT_STATE };
 let toolbarMounting = false;
 let currentTheme = DEFAULT_THEME_ID;
 let hoverBorderEnabled = true;
+let favoriteVoices: string[] = [];
 
 // Fix #1 — sentence text cache: rebuilt after every DOM walk so the word-event
 // handler can look up a sentence in O(1) instead of filtering the full word list.
@@ -74,6 +75,7 @@ function buildToolbarState(): ToolbarState {
     totalWords: state.totalWords,
     highlightTheme: currentTheme,
     hoverBorderEnabled,
+    favoriteVoices,
   };
 }
 
@@ -133,15 +135,26 @@ function createToolbar(): FloatingToolbar {
       onModeChange: async (mode) => {
         LOG('modeChange:', mode);
         state.mode = mode;
-        // 'selection' is transient — don't persist it
-        if (mode !== 'selection') {
-          await chrome.storage.sync.set({ mode });
+        // Stop any active playback and clear walk so next Play starts fresh
+        if (tts) {
+          tts.stop();
+          tts = null;
         }
+        // Don't restore DOM spans — just null the reference so next Play re-walks.
+        // Keeping spans in DOM lets hover/click still work immediately.
+        walkResult = null;
+        walkPromise = null;
+        setState({ status: 'stopped', currentWord: '', wordIndex: 0, currentSentence: '' });
+        // Persist the mode
+        await chrome.storage.sync.set({ mode });
         // Arm/disarm click-to-read based on mode switch
         if (mode === 'click') {
           enableClickToRead();
+        } else if (mode === 'page') {
+          // Keep click-to-read armed in page mode — clicking a word starts from that word
+          enableClickToRead();
         } else {
-          // Switching away from click mode — disarm if no active playback
+          // 'selection' mode — disarm click-to-read if no active playback
           if (state.status === 'stopped' || state.status === 'loading') {
             disableClickToRead();
           }
@@ -178,6 +191,7 @@ function createToolbar(): FloatingToolbar {
         state.volume    = 1.0;
         state.mode      = 'page';
         hoverBorderEnabled = true;
+        favoriteVoices  = [];
         currentTheme = DEFAULT_THEME_ID;
         applyTheme(DEFAULT_THEME_ID);
         // Rebuild toolbar with fresh state
@@ -186,6 +200,12 @@ function createToolbar(): FloatingToolbar {
         toolbar.mount();
         enableClickToRead();
       },
+      onFavoritesChange: async (favorites) => {
+        LOG('favoritesChange:', favorites);
+        favoriteVoices = favorites;
+        await chrome.storage.sync.set({ favoriteVoices: favorites });
+      },
+      getVoiceName: () => state.voiceName,
     },
     buildToolbarState(),
   );
@@ -735,18 +755,15 @@ chrome.runtime.onMessage.addListener(
 
 (async () => {
   try {
-    const stored = await chrome.storage.sync.get(['voiceName', 'rate', 'pitch', 'volume', 'mode', 'highlightTheme', 'hoverBorderEnabled']);
+    const stored = await chrome.storage.sync.get(['voiceName', 'rate', 'pitch', 'volume', 'mode', 'highlightTheme', 'hoverBorderEnabled', 'favoriteVoices']);
     if (stored.voiceName) state.voiceName = stored.voiceName as string;
     if (stored.rate   != null) state.rate   = stored.rate   as number;
     if (stored.pitch  != null) state.pitch  = stored.pitch  as number;
     if (stored.volume != null) state.volume = stored.volume as number;
-    // 'selection' is a transient mode — don't restore it across sessions
-    if (stored.mode && stored.mode !== 'selection') state.mode = stored.mode as typeof state.mode;
-    // Clear stale 'selection' from storage if it was saved by an older version
-    if (stored.mode === 'selection') {
-      await chrome.storage.sync.set({ mode: 'page' });
-    }
+    // Restore last saved mode ('selection' is now persisted — it just won't auto-play on open)
+    if (stored.mode) state.mode = stored.mode as typeof state.mode;
     if (stored.hoverBorderEnabled != null) hoverBorderEnabled = stored.hoverBorderEnabled as boolean;
+    if (Array.isArray(stored.favoriteVoices)) favoriteVoices = stored.favoriteVoices as string[];
     if (stored.highlightTheme) {
       currentTheme = stored.highlightTheme as string;
       applyTheme(currentTheme);
