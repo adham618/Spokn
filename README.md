@@ -4,7 +4,7 @@ Offline text-to-speech Chrome extension with word-by-word highlighting. Reads an
 
 [![Chrome Web Store](https://img.shields.io/badge/Chrome%20Web%20Store-View%20Extension-4285F4?logo=googlechrome&logoColor=white)](https://chrome.google.com/webstore/detail/spokn/xxxxxxxxxxxxxxxxxxxxxxxxxxxxxx)
 
-[![ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/adham_dev)
+[![ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/adham_tarek)
 
 ## Features
 
