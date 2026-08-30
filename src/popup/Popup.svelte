@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onDestroy, onMount } from 'svelte';
+  import { DEFAULT_THEME_ID } from '../content/highlightTheme.js';
   import type { Message } from '../shared/messages.js';
   import type { PlaybackState, ReadingMode } from '../shared/types.js';
   import { DEFAULT_STATE } from '../shared/types.js';
@@ -12,6 +13,7 @@
   // ── Reactive state ───────────────────────────────────────────────────────
   let playbackState: PlaybackState = $state({ ...DEFAULT_STATE });
   let favoriteVoices: string[] = $state([]);
+  let highlightTheme: string = $state(DEFAULT_THEME_ID);
   let settingsOpen = $state(false);
   let toastMsg = $state('');
   let toastTimer: ReturnType<typeof setTimeout> | null = null;
@@ -54,7 +56,7 @@
     } catch { /* background may not be ready */ }
 
     // Pull settings from storage
-    const stored = await chrome.storage.sync.get(['voiceName', 'rate', 'pitch', 'volume', 'mode', 'favoriteVoices']);
+    const stored = await chrome.storage.sync.get(['voiceName', 'rate', 'pitch', 'volume', 'mode', 'favoriteVoices', 'highlightTheme']);
     if (stored.voiceName)  playbackState.voiceName = stored.voiceName as string;
     if (stored.rate != null) playbackState.rate = stored.rate as number;
     if (stored.pitch != null) playbackState.pitch = stored.pitch as number;
@@ -62,6 +64,7 @@
     // 'selection' is a transient mode — don't restore it across sessions
     if (stored.mode && stored.mode !== 'selection') playbackState.mode = stored.mode as ReadingMode;
     if (Array.isArray(stored.favoriteVoices)) favoriteVoices = stored.favoriteVoices as string[];
+    if (stored.highlightTheme) highlightTheme = stored.highlightTheme as string;
 
     // Listen for state updates pushed from content script via background
     chrome.runtime.onMessage.addListener(handleBackgroundMessage);
@@ -168,19 +171,17 @@
 
   async function handleResetConfirm() {
     resetConfirmVisible = false;
+    // Always clear storage from the popup side — covers pages where
+    // the content script isn't running (new tab, chrome:// pages, etc.)
     await chrome.storage.sync.clear();
-    // Clear saved toolbar position on the active tab
-    try {
-      const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-      if (tab?.id) {
-        await chrome.scripting.executeScript({
-          target: { tabId: tab.id },
-          func: () => localStorage.removeItem('spokn-toolbar-pos'),
-        });
-      }
-    } catch { /* ignore — scripting may not be available on all pages */ }
+    // Tell the content script to reset its in-memory state, re-apply default
+    // theme, reset hoverBorder, and rebuild the toolbar if it's open.
+    // Fails silently on pages where the content script isn't injected.
+    await sendToTab({ type: 'RESET_SETTINGS' });
+    // Reset popup UI state to match
     playbackState = { ...DEFAULT_STATE };
     favoriteVoices = [];
+    highlightTheme = DEFAULT_THEME_ID;
     toast('Settings reset to defaults');
   }
 

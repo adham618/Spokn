@@ -9,6 +9,8 @@ export type Message =
   | { type: 'SET_SPEED'; rate: number }
   | { type: 'SET_PITCH'; pitch: number }
   | { type: 'SET_VOLUME'; volume: number }
+  | { type: 'SET_THEME'; themeId: string }
+  | { type: 'RESET_SETTINGS' }
   | { type: 'GET_STATE' }
   | { type: 'IS_TOOLBAR_VISIBLE' }
   | { type: 'STATE_UPDATE'; state: PlaybackState }

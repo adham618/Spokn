@@ -75,8 +75,6 @@ export class FloatingToolbar {
   private cb: ToolbarCallbacks;
   private st: ToolbarState;
   private settingsOpen = false;
-  // Tracks whether the inline reset-confirm row is showing
-  private resetConfirmVisible = false;
 
   // Drag
   private dragging = false;
@@ -154,7 +152,6 @@ export class FloatingToolbar {
     this.host = null;
     this.shadow = null;
     this.settingsOpen = false;
-    this.resetConfirmVisible = false;
     this.posX = null;
     this.posY = null;
   }
@@ -472,14 +469,6 @@ export class FloatingToolbar {
             </a>
           </div>
           <button id="spokn-reset-btn" title="Reset all settings to defaults">Reset to defaults</button>
-          <!-- Fix #12 — inline confirm row replaces window.confirm() -->
-          <div id="spokn-reset-confirm" style="display:none">
-            <span class="reset-confirm-text">Reset all settings?</span>
-            <div class="reset-confirm-btns">
-              <button id="spokn-reset-confirm-yes">Yes, reset</button>
-              <button id="spokn-reset-confirm-no">Cancel</button>
-            </div>
-          </div>
         </div>
 
       </div>
@@ -630,25 +619,10 @@ export class FloatingToolbar {
       this.cb.onHoverBorderToggle(enabled);
     });
 
-    // Fix #12 — inline confirm instead of window.confirm()
     s.getElementById('spokn-reset-btn')?.addEventListener('click', () => {
-      const confirmRow = s.getElementById('spokn-reset-confirm');
-      if (!confirmRow) return;
-      this.resetConfirmVisible = !this.resetConfirmVisible;
-      confirmRow.style.display = this.resetConfirmVisible ? 'flex' : 'none';
-    });
-
-    s.getElementById('spokn-reset-confirm-yes')?.addEventListener('click', () => {
-      const confirmRow = s.getElementById('spokn-reset-confirm');
-      if (confirmRow) confirmRow.style.display = 'none';
-      this.resetConfirmVisible = false;
-      this.cb.onReset();
-    });
-
-    s.getElementById('spokn-reset-confirm-no')?.addEventListener('click', () => {
-      const confirmRow = s.getElementById('spokn-reset-confirm');
-      if (confirmRow) confirmRow.style.display = 'none';
-      this.resetConfirmVisible = false;
+      if (window.confirm('Reset all settings to defaults?')) {
+        this.cb.onReset();
+      }
     });
 
     this.attachSlider('spokn-speed-slider', 0.5, 3.0, (v) => {
@@ -2021,48 +1995,6 @@ export class FloatingToolbar {
         border-color: rgba(239,68,68,0.6);
       }
 
-      /* Fix #12 — inline reset confirmation row */
-      #spokn-reset-confirm {
-        display: none;
-        flex-direction: column;
-        gap: 6px;
-        margin-top: 6px;
-        padding: 8px 10px;
-        background: rgba(239,68,68,0.08);
-        border: 1px solid rgba(239,68,68,0.25);
-        border-radius: 8px;
-      }
-      .reset-confirm-text {
-        font-size: 11px;
-        color: #f87171;
-        text-align: center;
-      }
-      .reset-confirm-btns {
-        display: flex;
-        gap: 6px;
-      }
-      .reset-confirm-btns button {
-        all: unset;
-        flex: 1;
-        padding: 5px 0;
-        text-align: center;
-        font-size: 11px;
-        font-family: inherit;
-        border-radius: 6px;
-        cursor: pointer;
-        transition: background 0.12s;
-      }
-      #spokn-reset-confirm-yes {
-        background: rgba(239,68,68,0.7);
-        color: #fff;
-      }
-      #spokn-reset-confirm-yes:hover { background: rgba(239,68,68,0.9); }
-      #spokn-reset-confirm-no {
-        background: var(--surface);
-        color: var(--muted);
-        border: 1px solid var(--border);
-      }
-      #spokn-reset-confirm-no:hover { background: var(--surface-hv); }
     `;
   }
 }

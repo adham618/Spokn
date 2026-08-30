@@ -180,25 +180,7 @@ function createToolbar(): FloatingToolbar {
       },
       onReset: async () => {
         LOG('reset all settings');
-        // Clear all persisted settings
-        await chrome.storage.sync.clear();
-        // Clear saved toolbar position
-        try { localStorage.removeItem('spokn-toolbar-pos'); } catch { /* ignore */ }
-        // Reset in-memory state to defaults
-        state.voiceName = '';
-        state.rate      = 1.0;
-        state.pitch     = 1.0;
-        state.volume    = 1.0;
-        state.mode      = 'page';
-        hoverBorderEnabled = true;
-        favoriteVoices  = [];
-        currentTheme = DEFAULT_THEME_ID;
-        applyTheme(DEFAULT_THEME_ID);
-        // Rebuild toolbar with fresh state
-        teardown();
-        toolbar = createToolbar();
-        toolbar.mount();
-        enableClickToRead();
+        await resetAllSettings();
       },
       onFavoritesChange: async (favorites) => {
         LOG('favoritesChange:', favorites);
@@ -600,6 +582,37 @@ function toggleToolbar(showClickHint = false): void {
   }
 }
 
+// ─── Reset all settings ───────────────────────────────────────────────────────
+
+async function resetAllSettings(): Promise<void> {
+  // Clear all persisted settings
+  await chrome.storage.sync.clear();
+  // Clear saved toolbar position
+  try { localStorage.removeItem('spokn-toolbar-pos'); } catch { /* ignore */ }
+  // Stop any active TTS
+  if (tts) { tts.stop(); tts = null; }
+  // Reset in-memory state to defaults
+  state.voiceName    = DEFAULT_STATE.voiceName;
+  state.rate         = DEFAULT_STATE.rate;
+  state.pitch        = DEFAULT_STATE.pitch;
+  state.volume       = DEFAULT_STATE.volume;
+  state.mode         = DEFAULT_STATE.mode;
+  hoverBorderEnabled = true;
+  favoriteVoices     = [];
+  currentTheme       = DEFAULT_THEME_ID;
+  // Rebuild toolbar with fresh state (if it's open), then re-apply theme
+  // AFTER teardown — teardown calls removeTheme() which strips the style tag.
+  const wasVisible = toolbar?.isVisible();
+  if (wasVisible) {
+    teardown();
+    toolbar = createToolbar();
+    toolbar.mount();
+    enableClickToRead();
+  }
+  // Apply theme last — after teardown() has had a chance to remove the old one
+  applyTheme(DEFAULT_THEME_ID);
+}
+
 // ─── Message listener ─────────────────────────────────────────────────────────
 
 chrome.runtime.onMessage.addListener(
@@ -722,6 +735,18 @@ chrome.runtime.onMessage.addListener(
             state.volume = msg.volume;
             tts?.updateOptions({ volume: msg.volume });
             await chrome.storage.sync.set({ volume: msg.volume });
+            sendResponse({ success: true } satisfies MessageResponse);
+            break;
+
+          case 'SET_THEME':
+            currentTheme = msg.themeId;
+            applyTheme(msg.themeId);
+            await chrome.storage.sync.set({ highlightTheme: msg.themeId });
+            sendResponse({ success: true } satisfies MessageResponse);
+            break;
+
+          case 'RESET_SETTINGS':
+            await resetAllSettings();
             sendResponse({ success: true } satisfies MessageResponse);
             break;
 
