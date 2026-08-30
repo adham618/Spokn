@@ -111,7 +111,7 @@ function createToolbar(): FloatingToolbar {
         teardown();
       },
       onVoiceChange: async (voiceName) => {
-        LOG('voiceChange:', voiceName);
+        LOG('voiceChange:', voiceName, '| previous:', state.voiceName);
         state.voiceName = voiceName;
         tts?.updateOptions({ voiceName });
         await chrome.storage.sync.set({ voiceName });
@@ -302,6 +302,8 @@ async function startReading(
   // from storage during init and kept in sync by every slider/picker callback.
   // Re-reading storage here caused stale values (e.g. rate: 2) to override the
   // current in-memory state when a new play session started.
+  // Snapshot voice name at call time so TTS is created with the right voice.
+  // We do NOT use this closed-over value in the 'start' handler — see below.
   const voiceName = state.voiceName || '';
   const rate      = state.rate   ?? 1.0;
   const pitch     = state.pitch  ?? 1.0;
@@ -314,17 +316,21 @@ async function startReading(
   tts.on((event) => {
     switch (event.type) {
       case 'start':
-        LOG('TTS started');
-        // Use state.rate/pitch/volume instead of the closed-over locals so that
-        // any slider changes made while paused are reflected when playback resumes
-        // (the closure captures the values at startReading() time, not the current ones).
+        LOG('TTS started — voice in TTS options:', voiceName, '| state.voiceName at start event:', state.voiceName);
+        // Use state.voiceName (live) instead of the closed-over `voiceName` local.
+        // Reason: populateVoices() or other async callbacks can fire between
+        // startReading() and the 'start' event, changing state.voiceName.
+        // Using the closed-over value would silently revert it back to the
+        // stale snapshot, causing the voice to switch on subsequent clicks.
+        //
         // Do NOT overwrite state.mode here — `mode` is the walk strategy
         // ('page' when click-to-read triggers startReading('page',...)) which
         // is different from the user's selected UI mode ('click'). Overwriting
         // it would silently switch the toolbar back to Full Page after the
         // first click-to-read session ends.
         setState({
-          status: 'playing', voiceName,
+          status: 'playing',
+          voiceName: state.voiceName,   // ← live value, not closed-over snapshot
           rate: state.rate, pitch: state.pitch, volume: state.volume,
           totalWords: result.words.length,
           wordIndex: startWordIndex,
@@ -470,6 +476,7 @@ function onClickRead(e: MouseEvent): void {
 
   if (!clickedSpan) return;
 
+  LOG('onClickRead — state.voiceName at click:', state.voiceName || '(default)');
   startReading('page', clickedSpan as Element).catch(ex => ERR('click-to-read threw:', ex));
 }
 

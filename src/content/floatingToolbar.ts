@@ -1028,11 +1028,12 @@ export class FloatingToolbar {
       // This prevents populateVoices from clobbering a valid saved voice
       // just because this.st.voiceName was '' at construction time.
       const liveVoice = this.cb.getVoiceName?.() ?? this.st.voiceName;
+
       if (liveVoice && this.allVoices.some(v => v.name === liveVoice)) {
         // Saved voice is available — sync it into st without firing onVoiceChange
         this.st.voiceName = liveVoice;
-      } else if (!liveVoice || !this.allVoices.some(v => v.name === liveVoice)) {
-        // No saved voice or it's not in the list — auto-pick
+      } else if (!liveVoice) {
+        // No voice set at all — safe to auto-pick a default
         const preferred =
           this.allVoices.find(v => v.lang.startsWith('en') && v.localService) ??
           this.allVoices.find(v => v.lang.startsWith('en')) ??
@@ -1041,6 +1042,12 @@ export class FloatingToolbar {
           this.st.voiceName = preferred.name;
           this.cb.onVoiceChange(preferred.name);
         }
+      } else {
+        // liveVoice is set but not found in the current list.
+        // Do NOT auto-pick — the voice list may still be loading (Chrome
+        // sometimes delivers a partial list on the first voiceschanged event).
+        // Keep the stored voice name so it can be resolved on the next call.
+        this.st.voiceName = liveVoice; // keep it — don't clobber with a default
       }
 
       this.renderVoiceList();

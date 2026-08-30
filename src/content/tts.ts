@@ -139,6 +139,12 @@ export class TTS {
   private isPaused = false;
   private isStopped = true;
 
+  // ── Resolved voice object ─────────────────────────────────────────────────
+  // Resolved once at play() time from speechSynthesis.getVoices() and reused
+  // for every chunk in the session. Prevents mid-session voice switches caused
+  // by the browser rebuilding its voice list between chunks (Chrome bug).
+  private resolvedVoice: SpeechSynthesisVoice | null = null;
+
   // ── Generation counter ────────────────────────────────────────────────────
   // Incremented on every speakChunk() call. Every callback captures its value
   // at creation time and bails out if it no longer matches speakGeneration.
@@ -180,6 +186,12 @@ export class TTS {
 
   updateOptions(opts: Partial<TTSOptions>): void {
     this.options = { ...this.options, ...opts };
+    // Re-resolve voice if the name changed so subsequent chunks use the right voice
+    if (opts.voiceName !== undefined) {
+      const voices = speechSynthesis.getVoices();
+      this.resolvedVoice = voices.find(v => v.name === this.options.voiceName) ?? null;
+      LOG('updateOptions — voiceName:', this.options.voiceName, '| resolved:', this.resolvedVoice?.name ?? '(not found, will use browser default)');
+    }
   }
 
   updateOptionsAndRestart(opts: Partial<TTSOptions>): void {
@@ -198,6 +210,12 @@ export class TTS {
     LOG('play() — words:', words.length, 'startWordIndex:', startWordIndex);
     this.stop();
     if (words.length === 0) return;
+
+    // Resolve voice once for the entire session so all chunks use the same
+    // voice object even if speechSynthesis.getVoices() changes mid-session.
+    const voices = speechSynthesis.getVoices();
+    this.resolvedVoice = voices.find(v => v.name === this.options.voiceName) ?? null;
+    LOG('play() — voiceName:', this.options.voiceName || '(empty)', '| resolved:', this.resolvedVoice?.name ?? '(not found — browser default will be used)', '| total voices available:', voices.length);
 
     speechSynthesis.cancel();
     await new Promise<void>(r => setTimeout(r, 150));
@@ -264,6 +282,7 @@ export class TTS {
     setTimeout(() => speechSynthesis.cancel(), 150);
     this.highlighter?.clearAll();
     this.highlighter = null;
+    this.resolvedVoice = null;
     this.emit({ type: 'stop' });
   }
 
@@ -305,9 +324,23 @@ export class TTS {
     utter.pitch  = this.options.pitch;
     utter.volume = this.options.volume;
 
-    const voices = speechSynthesis.getVoices();
-    const voice  = voices.find(v => v.name === this.options.voiceName);
-    if (voice) utter.voice = voice;
+    // Use the voice resolved at play() time — avoids browser re-querying
+    // the voice list on every chunk, which can return a different (default)
+    // voice if the list is rebuilt mid-session (Chrome bug).
+    if (this.resolvedVoice) {
+      utter.voice = this.resolvedVoice;
+    } else if (this.options.voiceName) {
+      // Fallback: try to resolve now in case the voice loaded after play()
+      const voices = speechSynthesis.getVoices();
+      const found = voices.find(v => v.name === this.options.voiceName);
+      if (found) {
+        this.resolvedVoice = found; // cache for subsequent chunks
+        utter.voice = found;
+        LOG(`speakChunk(${index}) — late-resolved voice: ${found.name}`);
+      } else {
+        WARN(`speakChunk(${index}) — voice "${this.options.voiceName}" not found in ${voices.length} voices — using browser default`);
+      }
+    }
 
     // char→localWordIndex map for real onboundary events
     let charCursor = 0;
