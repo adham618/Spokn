@@ -1097,7 +1097,7 @@ export class FloatingToolbar {
         justify-content: center;
         width: 44px;
         height: 44px;
-        border-radius: 10px;
+        border-radius: 50%;
         cursor: pointer;
         color: #fff;
         transition: background 0.12s, color 0.12s, transform 0.08s;
@@ -1484,16 +1484,6 @@ export class FloatingToolbar {
       .time-remaining svg { flex-shrink: 0; opacity: 0.7; }
 
       /* ── Click-mode active indicator ─────────────────────────────────────── */
-      #spokn-pill.click-mode-active {
-        box-shadow: 0 0 0 2px rgba(2,119,212,0.5), 0 2px 12px rgba(0,0,0,0.3);
-      }
-      #spokn-pill.click-mode-active #spokn-playpause {
-        animation: spokn-click-pulse 2s ease-in-out infinite;
-      }
-      @keyframes spokn-click-pulse {
-        0%, 100% { box-shadow: 0 0 0 0 rgba(2,119,212,0.5); }
-        50%       { box-shadow: 0 0 0 5px rgba(2,119,212,0); }
-      }
 
       /* ── Ko-fi ───────────────────────────────────────────────────────────── */
       #spokn-kofi { display: flex; align-items: center; justify-content: center; }
