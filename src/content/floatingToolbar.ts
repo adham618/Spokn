@@ -169,6 +169,56 @@ export class FloatingToolbar {
     setTimeout(() => tip?.classList.remove('visible'), 3500);
   }
 
+  /**
+   * Shows a persistent engine-error banner above the pill.
+   * Unlike showError(), this does not auto-dismiss — the user must act.
+   *
+   * If fallbackVoiceName is provided, the action button says
+   * "Switch to <voice> & retry" — a non-destructive recovery that avoids
+   * the broken audio pipeline without reloading the page.
+   * If no local fallback is available, the button says "Retry".
+   *
+   * onAction is called when the user clicks the button.
+   */
+  showEngineError(onAction: () => void, fallbackVoiceName: string | null): void {
+    if (!this.shadow) return;
+
+    // Remove any existing banner first
+    this.shadow.getElementById('spokn-engine-error-banner')?.remove();
+
+    const btnLabel = fallbackVoiceName
+      ? `Switch voice & retry`
+      : `Dismiss`;
+
+    const msgText = fallbackVoiceName
+      ? `Speech engine stopped. Switching to a local voice may fix it.`
+      : `Speech engine stopped. Please restart Chrome to continue.`;
+
+    const banner = document.createElement('div');
+    banner.id = 'spokn-engine-error-banner';
+    banner.setAttribute('role', 'alert');
+    banner.setAttribute('aria-live', 'assertive');
+    banner.innerHTML = `
+      <span class="engine-error-icon" aria-hidden="true">⚠</span>
+      <span class="engine-error-msg">${msgText}</span>
+      <button class="engine-error-retry" type="button">${btnLabel}</button>
+    `;
+
+    // Append into the pill-wrap so it floats above the pill
+    const pillWrap = this.shadow.getElementById('spokn-pill-wrap');
+    if (!pillWrap) return;
+    pillWrap.appendChild(banner);
+
+    banner.querySelector('.engine-error-retry')?.addEventListener('click', () => {
+      banner.remove();
+      onAction();
+    });
+  }
+
+  dismissEngineError(): void {
+    this.shadow?.getElementById('spokn-engine-error-banner')?.remove();
+  }
+
   // ─── State updates ──────────────────────────────────────────────────────────
 
   updateState(partial: Partial<ToolbarState>): void {
@@ -2001,6 +2051,60 @@ export class FloatingToolbar {
         background: rgba(239,68,68,0.1);
         border-color: rgba(239,68,68,0.6);
       }
+
+      /* ── Engine error banner ─────────────────────────────────────────────── */
+      #spokn-engine-error-banner {
+        position: absolute;
+        bottom: calc(100% + 10px);
+        left: 50%;
+        transform: translateX(-50%);
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        background: #1f1a1a;
+        border: 1px solid rgba(239,68,68,0.45);
+        border-radius: 12px;
+        box-shadow: 0 4px 16px rgba(0,0,0,0.5);
+        padding: 9px 12px;
+        white-space: nowrap;
+        font-size: 11px;
+        font-family: inherit;
+        color: #f0f4ff;
+        z-index: 20;
+        animation: spokn-banner-in 0.18s ease;
+      }
+      @keyframes spokn-banner-in {
+        from { opacity: 0; transform: translateX(-50%) translateY(6px); }
+        to   { opacity: 1; transform: translateX(-50%) translateY(0); }
+      }
+      .engine-error-icon {
+        font-size: 13px;
+        flex-shrink: 0;
+        color: #f87171;
+        line-height: 1;
+      }
+      .engine-error-msg {
+        color: #d1d5db;
+        line-height: 1.4;
+        white-space: normal;
+        max-width: 200px;
+      }
+      .engine-error-retry {
+        all: unset;
+        flex-shrink: 0;
+        padding: 4px 10px;
+        background: #dc2626;
+        color: #fff;
+        border-radius: 6px;
+        font-size: 11px;
+        font-family: inherit;
+        font-weight: 600;
+        cursor: pointer;
+        transition: filter 0.12s, transform 0.08s;
+        line-height: 1.4;
+      }
+      .engine-error-retry:hover  { filter: brightness(1.15); }
+      .engine-error-retry:active { transform: scale(0.95); }
 
     `;
   }

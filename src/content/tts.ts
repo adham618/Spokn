@@ -22,6 +22,19 @@
  *   speaking time. Real onboundary events take over if they do arrive (e.g.
  *   on Brave or with certain Chrome voices).
  *
+ * Bug 5 — Silent-death after extended use: Chrome's TTS engine (macOS system
+ *   voices like Samantha go through AVSpeech) silently stops producing audio
+ *   mid-utterance after extended use in a session. speak() succeeds, onstart
+ *   fires, highlighting continues via fallback timers — but no audio plays.
+ *   Only restarting Chrome reliably resets the OS-level audio resources.
+ *   Fix 1 (prevention): a periodic pause()+resume() keepalive every 14 s
+ *   kicks Chrome's audio scheduler and keeps AVSpeech alive for the duration
+ *   of each utterance.
+ *   Fix 2 (detection): if the deadline fires and onstart was never received
+ *   for two consecutive chunks, the engine is confirmed dead — emit
+ *   'engine_error' so content.ts can show the user a clear banner telling
+ *   them to restart Chrome.
+ *
  * Exposes a clean TTS class used by content.ts.
  */
 
@@ -32,7 +45,7 @@ const LOG  = (...args: unknown[]) => console.log('[Spokn TTS]', ...args);
 const WARN = (...args: unknown[]) => console.warn('[Spokn TTS]', ...args);
 const ERR  = (...args: unknown[]) => console.error('[Spokn TTS]', ...args);
 
-export type TTSEventType = 'start' | 'pause' | 'resume' | 'stop' | 'word' | 'end';
+export type TTSEventType = 'start' | 'pause' | 'resume' | 'stop' | 'word' | 'end' | 'engine_error';
 
 export interface TTSEvent {
   type: TTSEventType;
@@ -46,6 +59,9 @@ export type TTSListener = (event: TTSEvent) => void;
 
 // ─── Chunk splitting ──────────────────────────────────────────────────────────
 
+// Chrome's 15-second speechSynthesis cutoff requires chunking at sentence
+// boundaries. 25 words ≈ 8 seconds at rate=1.0, safely under the 15s limit
+// across all Chrome versions and voice speeds.
 const MAX_CHUNK_WORDS = 25;
 
 interface Chunk {
@@ -171,6 +187,22 @@ export class TTS {
   private lastBoundaryTime = 0;
   private readonly WATCHDOG_MS = 5000;
 
+  // ── Keepalive (mid-utterance silent-death prevention) ─────────────────────
+  // Chrome's TTS engine — especially on macOS with system voices like Samantha
+  // — silently stops producing audio mid-utterance after extended use. A
+  // periodic pause()+resume() every 14 seconds kicks the audio thread and
+  // prevents this. Only active while an utterance is in progress (onstart →
+  // onend/onerror). Does NOT interfere with the pause/resume user controls
+  // because it only fires when isStopped=false AND isPaused=false.
+  private keepaliveTimer: ReturnType<typeof setInterval> | null = null;
+  private readonly KEEPALIVE_MS = 14000;
+
+  // ── Engine-error tracking ─────────────────────────────────────────────────
+  // Counts chunks where the deadline expired without onstart ever firing.
+  // Two consecutive silent chunks = engine is in silent-death state.
+  private consecutiveSilentChunks = 0;
+  private readonly SILENT_CHUNK_THRESHOLD = 2;
+
   constructor(options: TTSOptions) {
     this.options = { ...options };
   }
@@ -210,6 +242,9 @@ export class TTS {
     LOG('play() — words:', words.length, 'startWordIndex:', startWordIndex);
     this.stop();
     if (words.length === 0) return;
+
+    // Reset engine error tracking for the new session
+    this.consecutiveSilentChunks = 0;
 
     // Resolve voice once for the entire session so all chunks use the same
     // voice object even if speechSynthesis.getVoices() changes mid-session.
@@ -350,9 +385,37 @@ export class TTS {
       charCursor += w.word.length + 1;
     }
 
+    // Track whether onstart fired for this chunk — used by forceAdvance to
+    // distinguish a genuine silent-death (no audio ever started) from a normal
+    // deadline overrun (audio started but ran longer than estimated).
+    let onstartFired = false;
+
     const forceAdvance = (reason: string) => {
       if (generation !== this.speakGeneration) return;
-      WARN(`${reason} chunk=${index} gen=${generation} — force-advancing to next chunk`);
+
+      if (!onstartFired) {
+        // Deadline fired without onstart ever arriving — the engine produced
+        // no audio at all for this chunk. Count consecutive silent chunks.
+        this.consecutiveSilentChunks++;
+        WARN(`${reason} chunk=${index} gen=${generation} — onstart never fired (silent chunk #${this.consecutiveSilentChunks})`);
+
+        if (this.consecutiveSilentChunks >= this.SILENT_CHUNK_THRESHOLD) {
+          // Engine is in silent-death state — stop and tell the user.
+          ERR(`engine silent-death confirmed after ${this.consecutiveSilentChunks} silent chunks — emitting engine_error`);
+          this.isStopped = true;
+          this.clearTimers();
+          this.speakGeneration++;
+          speechSynthesis.cancel();
+          this.highlighter?.clearAll();
+          this.emit({ type: 'engine_error' });
+          return;
+        }
+      } else {
+        // onstart fired — audio was running, reset silent counter
+        this.consecutiveSilentChunks = 0;
+        WARN(`${reason} chunk=${index} gen=${generation} — force-advancing to next chunk`);
+      }
+
       this.clearTimers();
       this.speakGeneration++;
       speechSynthesis.cancel();
@@ -393,14 +456,28 @@ export class TTS {
         return;
       }
       LOG(`onstart chunk=${index} gen=${generation}`);
+      // onstart fired — audio is running, mark for engine-error tracking
+      onstartFired = true;
+      this.consecutiveSilentChunks = 0;
       this.lastBoundaryTime = Date.now();
-
       // Deadline timer
       const deadline = chunkDeadlineMs(chunk.words.length, this.options.rate);
       this.chunkDeadlineAt = Date.now() + deadline;
       LOG(`deadline set: ${Math.round(deadline)}ms for ${chunk.words.length} words`);
       this.clearDeadline();
       this.deadlineTimer = setTimeout(() => forceAdvance('deadline'), deadline);
+
+      // Keepalive: pause()+resume() every 14 s prevents Chrome's TTS engine
+      // from silently dying mid-utterance (macOS AVSpeech / Samantha bug).
+      // Cleared automatically when the chunk ends via clearTimers().
+      this.clearKeepalive();
+      this.keepaliveTimer = setInterval(() => {
+        if (this.isStopped || this.isPaused) { this.clearKeepalive(); return; }
+        if (generation !== this.speakGeneration) { this.clearKeepalive(); return; }
+        if (!speechSynthesis.speaking) return; // already stopped, don't interfere
+        speechSynthesis.pause();
+        speechSynthesis.resume();
+      }, this.KEEPALIVE_MS);
 
       // Watchdog (tab-switch stall only)
       this.startWatchdog(generation);
@@ -504,10 +581,18 @@ export class TTS {
     this.fallbackTimers = [];
   }
 
+  private clearKeepalive(): void {
+    if (this.keepaliveTimer !== null) {
+      clearInterval(this.keepaliveTimer);
+      this.keepaliveTimer = null;
+    }
+  }
+
   private clearTimers(): void {
     this.clearDeadline();
     this.clearWatchdog();
     this.clearFallback();
+    this.clearKeepalive();
   }
 
   /**

@@ -367,6 +367,20 @@ async function startReading(
         // Keep spans in DOM so hover still works — restore happens on toolbar close
         tts = null;
         break;
+
+      case 'engine_error': {
+        LOG('TTS engine_error — showing recovery banner');
+        setState({ status: 'stopped', currentWord: '', wordIndex: 0, currentSentence: '' });
+        tts = null;
+        // The macOS AVSpeechSynthesizer resource has been exhausted for this
+        // Chrome session. No in-page recovery is possible — the user needs to
+        // restart Chrome. Show a clear message rather than a misleading retry.
+        toolbar?.showEngineError(() => {
+          // Dismiss and let the user try manually restarting the extension
+          toolbar?.dismissEngineError();
+        }, null);
+        break;
+      }
     }
   });
 
@@ -383,6 +397,7 @@ function stopReading(): void {
   LOG('stopReading()');
   tts?.stop();
   tts = null;
+  toolbar?.dismissEngineError();
   // Don't restore spans here — hover should still work while toolbar is open
   state = {
     ...DEFAULT_STATE,

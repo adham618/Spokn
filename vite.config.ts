@@ -10,7 +10,7 @@ export default defineConfig({
       manifest: () => ({
         manifest_version: 3,
         name: 'Spokn — Offline Text to Speech',
-        version: '1.0.2',
+        version: '1.0.3',
         description: "Read any webpage aloud with word-by-word highlighting. 100% offline, no accounts, no API keys. Uses your device's built-in voices.",
         icons: {
           '16': 'icons/icon16.png',
