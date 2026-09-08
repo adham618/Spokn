@@ -60,7 +60,7 @@ Spokn is a free, fully offline text-to-speech extension that reads any webpage a
 ### How it works
 
 1. Click the Spokn icon in your toolbar
-2. The floating player appears at the bottom of the page
+2. The floating toolbar appears on the right side of the page
 3. Click Play — Spokn reads the entire page from the top
 4. Or click any paragraph to start reading from that point
 5. Or select text, right-click, and choose "Read selection with Spokn"
@@ -72,8 +72,8 @@ Spokn is a free, fully offline text-to-speech extension that reads any webpage a
 - **Word-by-word highlighting** — each word is highlighted as it is spoken, following your reading in real time
 - **Click any paragraph** to start reading from that point
 - **Right-click → Read selection** to read only the text you highlighted
-- **Floating mini-player** — draggable, stays on top of everything, never gets in the way
-- **10 highlight color themes** — Yellow, Sky, Mint, Coral, Violet, Warm, Rose, Dark, Light, or None
+- **Floating toolbar** — draggable vertical panel on the right side of the page, stays out of your way
+- **9 highlight color themes** — Yellow, Sky, Mint, Coral, Violet, Warm, Rose, Dark, or Light
 - **Speed control** — 0.5× to 3.0× in the settings panel
 - **Pitch and volume control**
 - **All system voices** — uses every voice installed on your device, grouped by language
