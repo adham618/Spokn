@@ -22,6 +22,7 @@ interface ReaderSettings {
   sleepTimerMinutes: number;
   favoriteVoices: string[];
   text: string;
+  wordIndex: number;
 }
 
 const DEFAULT_SETTINGS: ReaderSettings = {
@@ -34,6 +35,7 @@ const DEFAULT_SETTINGS: ReaderSettings = {
   sleepTimerMinutes: 0,
   favoriteVoices: [],
   text: '',
+  wordIndex: 0,
 };
 
 async function loadStoredSettings(): Promise<ReaderSettings> {
@@ -103,6 +105,10 @@ function debounce<T extends unknown[]>(fn: (...args: T) => void, ms: number): (.
 const persistText = debounce((text: string) => {
   saveStoredSettings({ text });
 }, 800);
+
+const persistWordIndex = debounce((idx: number) => {
+  saveStoredSettings({ wordIndex: idx });
+}, 1500);
 
 // ─── Build words ─────────────────────────────────────────────────────────────
 
@@ -277,6 +283,7 @@ function stopAll(): void {
   exitReadingMode();
   updateButtons();
   updateProgress();
+  saveStoredSettings({ wordIndex: 0 });
 }
 
 function playFrom(startIdx: number): void {
@@ -435,6 +442,7 @@ function updateProgress(): void {
   bar.style.width = `${pct}%`;
   label.textContent = words.length > 0 ? `${wordIndex} / ${words.length} words` : '';
   updateTimeRemaining();
+  if (isPlaying && wordIndex > 0) persistWordIndex(wordIndex);
 }
 
 function updateTimeRemaining(): void {
@@ -647,7 +655,7 @@ function populateVoices(): void {
   if (link) {
     const ua = navigator.userAgent.toLowerCase();
     const os = ua.includes('mac') ? 'macOS' : ua.includes('win') ? 'Windows' : 'my device';
-    const prompt = `How do I add more text-to-speech voices on ${os}? I'm using a browser extension that reads web pages aloud and I want more voice options to choose from. Please give me simple step-by-step instructions for a regular user, no code.`;
+    const prompt = `How do I add more text-to-speech voices on ${os}? I'm using a Chrome extension called Spokn that reads web pages and documents aloud using the browser's built-in speech synthesis voices. I want more voice options to choose from. Please give me simple step-by-step instructions for a regular user, no code.`;
     link.href = `https://chatgpt.com/?q=${encodeURIComponent(prompt)}`;
   }
 }
@@ -670,9 +678,15 @@ async function applySettings(s: ReaderSettings): Promise<void> {
     words    = buildWords(fullText);
     const ta = $<HTMLTextAreaElement>('#text-input');
     if (ta) ta.value = fullText;
+    // Restore position — only show banner if meaningfully into the text (>2%)
+    const savedIdx = Math.min(s.wordIndex ?? 0, Math.max(0, words.length - 1));
+    wordIndex = savedIdx;
     updateButtons();
     updateProgress();
     setStatus(`${words.length} words — ready to play`, 'success');
+    if (savedIdx > 0 && words.length > 0 && (savedIdx / words.length) > 0.02) {
+      showResumeBanner(savedIdx, words.length);
+    }
   }
 
   syncSlider('#rate-input',   rate,   0.5, 3.0);
@@ -714,6 +728,7 @@ async function saveAllSettings(): Promise<void> {
     sleepTimerMinutes,
     favoriteVoices,
     text: fullText,
+    wordIndex,
   };
   await saveStoredSettings(s);
   showToast('Settings saved');
@@ -742,6 +757,48 @@ function showToast(msg: string): void {
   t.textContent = msg;
   t.classList.add('toast-visible');
   setTimeout(() => t!.classList.remove('toast-visible'), 2200);
+}
+
+function showResumeBanner(idx: number, total: number): void {
+  // Remove any existing banner first
+  document.getElementById('resume-banner')?.remove();
+
+  const pct = Math.round((idx / total) * 100);
+  const banner = document.createElement('div');
+  banner.id = 'resume-banner';
+  banner.innerHTML = `
+    <span class="resume-banner-text">Resume from <strong>${pct}%</strong> · word ${idx.toLocaleString()} of ${total.toLocaleString()}</span>
+    <div class="resume-banner-actions">
+      <button id="resume-btn-continue" class="resume-btn resume-btn-primary">Resume</button>
+      <button id="resume-btn-restart" class="resume-btn resume-btn-ghost">Start over</button>
+    </div>
+    <button id="resume-btn-dismiss" class="resume-dismiss" aria-label="Dismiss">✕</button>
+  `;
+
+  // Insert below the progress bar (inside .reader-controls-panel, before .controls)
+  const controls = document.querySelector('.controls');
+  controls?.parentElement?.insertBefore(banner, controls);
+
+  requestAnimationFrame(() => banner.classList.add('resume-banner-visible'));
+
+  const dismiss = () => {
+    banner.classList.remove('resume-banner-visible');
+    setTimeout(() => banner.remove(), 220);
+  };
+
+  document.getElementById('resume-btn-continue')?.addEventListener('click', () => {
+    dismiss();
+    playFrom(wordIndex); // wordIndex already set to savedIdx
+  });
+
+  document.getElementById('resume-btn-restart')?.addEventListener('click', () => {
+    wordIndex = 0;
+    saveStoredSettings({ wordIndex: 0 });
+    updateProgress();
+    dismiss();
+  });
+
+  document.getElementById('resume-btn-dismiss')?.addEventListener('click', dismiss);
 }
 
 // ─── Build UI ─────────────────────────────────────────────────────────────────
@@ -1270,8 +1327,9 @@ function injectStyles(): void {
     .voice-picker{display:flex;flex-direction:column;gap:6px;}
     .vp-tabs{display:flex;gap:3px;background:rgba(0,0,0,0.2);border-radius:8px;padding:3px;}
     .vp-tab{all:unset;flex:1;text-align:center;padding:4px 6px;border-radius:6px;font-size:11px;font-weight:500;color:rgba(255,255,255,0.4);cursor:pointer;transition:all .15s;font-family:inherit;white-space:nowrap;}
-    .vp-tab:hover{color:rgba(255,255,255,0.8);background:rgba(255,255,255,0.05);}
+    .vp-tab:hover:not(.vp-tab-active){color:rgba(255,255,255,0.8);background:rgba(255,255,255,0.05);}
     .vp-tab-active{background:#0277D4;color:#fff;font-weight:600;}
+    .vp-tab-active:hover{background:#0277D4;color:#fff;}
     .vp-fav-count{font-size:10px;opacity:.85;}
     .vp-search-wrap{position:relative;display:flex;align-items:center;}
     .vp-search-icon{position:absolute;left:8px;color:rgba(255,255,255,0.3);pointer-events:none;flex-shrink:0;}
@@ -1331,6 +1389,20 @@ function injectStyles(): void {
     /* Toast */
     #reader-toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%) translateY(12px);background:#1b1c1f;border:1px solid rgba(255,255,255,0.1);color:#e8edf5;font-size:12px;font-family:inherit;padding:8px 18px;border-radius:10px;box-shadow:0 4px 16px rgba(0,0,0,0.4);opacity:0;transition:opacity .2s,transform .2s;pointer-events:none;white-space:nowrap;}
     #reader-toast.toast-visible{opacity:1;transform:translateX(-50%) translateY(0);}
+
+    /* Resume banner */
+    #resume-banner{display:flex;align-items:center;gap:10px;padding:10px 14px;background:rgba(2,119,212,0.1);border:1px solid rgba(2,119,212,0.3);border-radius:10px;opacity:0;transform:translateY(-6px);transition:opacity .22s,transform .22s;position:relative;}
+    #resume-banner.resume-banner-visible{opacity:1;transform:translateY(0);}
+    .resume-banner-text{font-size:12px;color:rgba(255,255,255,0.6);flex:1;line-height:1.4;}
+    .resume-banner-text strong{color:#e8edf5;font-weight:600;}
+    .resume-banner-actions{display:flex;gap:6px;flex-shrink:0;}
+    .resume-btn{all:unset;padding:5px 12px;border-radius:7px;font-size:11px;font-weight:600;font-family:inherit;cursor:pointer;transition:filter .12s,background .12s;}
+    .resume-btn-primary{background:#0277D4;color:#fff;}
+    .resume-btn-primary:hover{filter:brightness(1.15);}
+    .resume-btn-ghost{background:transparent;border:1px solid rgba(255,255,255,0.15);color:rgba(255,255,255,0.5);}
+    .resume-btn-ghost:hover{border-color:rgba(255,255,255,0.35);color:rgba(255,255,255,0.85);}
+    .resume-dismiss{all:unset;position:absolute;top:6px;right:8px;font-size:10px;color:rgba(255,255,255,0.25);cursor:pointer;line-height:1;padding:2px 3px;border-radius:3px;transition:color .12s;}
+    .resume-dismiss:hover{color:rgba(255,255,255,0.6);}
   `;
   document.head.appendChild(style);
 }

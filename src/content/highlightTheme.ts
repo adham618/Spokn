@@ -22,7 +22,7 @@ export const HIGHLIGHT_THEMES: HighlightTheme[] = [
     label: 'Sky',
     swatch: '#0ea5e9',
     wordBg: '#0ea5e9',
-    wordColor: '#ffffff',
+    wordColor: '#e8edf5',
     sentenceBg: 'rgba(14, 165, 233, 0.15)',
   },
   {
@@ -38,7 +38,7 @@ export const HIGHLIGHT_THEMES: HighlightTheme[] = [
     label: 'Mint',
     swatch: '#10b981',
     wordBg: '#10b981',
-    wordColor: '#ffffff',
+    wordColor: '#e8edf5',
     sentenceBg: 'rgba(16, 185, 129, 0.15)',
   },
   {
@@ -46,7 +46,7 @@ export const HIGHLIGHT_THEMES: HighlightTheme[] = [
     label: 'Coral',
     swatch: '#f87171',
     wordBg: '#f87171',
-    wordColor: '#ffffff',
+    wordColor: '#e8edf5',
     sentenceBg: 'rgba(248, 113, 113, 0.15)',
   },
   {
@@ -54,7 +54,7 @@ export const HIGHLIGHT_THEMES: HighlightTheme[] = [
     label: 'Violet',
     swatch: '#a78bfa',
     wordBg: '#a78bfa',
-    wordColor: '#ffffff',
+    wordColor: '#e8edf5',
     sentenceBg: 'rgba(167, 139, 250, 0.15)',
   },
   {
@@ -62,7 +62,7 @@ export const HIGHLIGHT_THEMES: HighlightTheme[] = [
     label: 'Warm',
     swatch: '#fb923c',
     wordBg: '#fb923c',
-    wordColor: '#ffffff',
+    wordColor: '#e8edf5',
     sentenceBg: 'rgba(251, 146, 60, 0.15)',
   },
   {
@@ -70,7 +70,7 @@ export const HIGHLIGHT_THEMES: HighlightTheme[] = [
     label: 'Rose',
     swatch: '#fb7185',
     wordBg: '#fb7185',
-    wordColor: '#ffffff',
+    wordColor: '#e8edf5',
     sentenceBg: 'rgba(251, 113, 133, 0.15)',
   },
   {

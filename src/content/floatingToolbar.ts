@@ -1336,7 +1336,7 @@ export class FloatingToolbar {
     const ua = navigator.userAgent.toLowerCase();
     const os = ua.includes('mac') ? 'macOS' : ua.includes('win') ? 'Windows' : 'my device';
 
-    const prompt = `How do I add more text-to-speech voices on ${os}? I'm using a browser extension that reads web pages aloud and I want more voice options to choose from. Please give me simple step-by-step instructions for a regular user, no code.`;
+    const prompt = `How do I add more text-to-speech voices on ${os}? I'm using a Chrome extension called Spokn that reads web pages and documents aloud using the browser's built-in speech synthesis voices. I want more voice options to choose from. Please give me simple step-by-step instructions for a regular user, no code.`;
     link.href = `https://chatgpt.com/?q=${encodeURIComponent(prompt)}`;
   }
 
