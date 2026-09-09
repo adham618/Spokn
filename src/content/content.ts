@@ -1,6 +1,16 @@
 /**
  * content.ts — Spokn content script entry point.
  * Injected at document_idle. Toggled via TOGGLE_TOOLBAR from background.
+ *
+ * Features added:
+ *  - Skip/rewind sentence (F1)
+ *  - Reading position memory per URL (F2)
+ *  - Auto-scroll toggle (F3) — Highlighter already does the scroll; we just
+ *    pass autoScroll flag so it can be suppressed when the user disables it
+ *  - Progress bar value passed through state (F4)
+ *  - Per-site voice/speed settings (F6)
+ *  - Sleep timer (F7)
+ *  - Mini player mode (F8) — toolbar state flag; toolbar renders differently
  */
 
 import type { Message, MessageResponse } from '../shared/messages.js';
@@ -20,7 +30,7 @@ const ERR = (...args: unknown[]) => console.error('[Spokn]', ...args);
 
 let tts: TTS | null = null;
 let walkResult: WalkResult | null = null;
-let walkPromise: Promise<WalkResult> | null = null;  // in-progress walk, if any
+let walkPromise: Promise<WalkResult> | null = null;
 let toolbar: FloatingToolbar | null = null;
 let clickToReadEnabled = false;
 let state: PlaybackState = { ...DEFAULT_STATE };
@@ -29,8 +39,17 @@ let currentTheme = DEFAULT_THEME_ID;
 let hoverBorderEnabled = true;
 let favoriteVoices: string[] = [];
 
-// Fix #1 — sentence text cache: rebuilt after every DOM walk so the word-event
-// handler can look up a sentence in O(1) instead of filtering the full word list.
+// Feature: auto-scroll
+let autoScrollEnabled = true;
+
+// Feature: sleep timer
+let sleepTimerHandle: ReturnType<typeof setTimeout> | null = null;
+
+// Feature: per-site settings
+interface SiteSettings { voiceName: string; rate: number; autoScroll: boolean; sleepTimerMinutes: number }
+let siteSettingsCache: Record<string, SiteSettings> = {};
+
+// Sentence text cache
 let sentenceCache: Map<number, string> = new Map();
 
 function buildSentenceCache(result: WalkResult): void {
@@ -46,7 +65,6 @@ function buildSentenceCache(result: WalkResult): void {
   }
 }
 
-// Fix #2 — debounce helper for chrome.storage.sync writes triggered by slider drag
 function debounce<T extends unknown[]>(fn: (...args: T) => void, ms: number): (...args: T) => void {
   let timer: ReturnType<typeof setTimeout> | null = null;
   return (...args: T) => {
@@ -58,6 +76,164 @@ function debounce<T extends unknown[]>(fn: (...args: T) => void, ms: number): (.
 const persistRate   = debounce((rate: number)   => chrome.storage.sync.set({ rate }),   400);
 const persistPitch  = debounce((pitch: number)  => chrome.storage.sync.set({ pitch }),  400);
 const persistVolume = debounce((volume: number) => chrome.storage.sync.set({ volume }), 400);
+
+// ─── Position memory ───────────────────────────────────────────────────────────
+
+const POS_MEMORY_KEY = 'spokn-page-positions';
+const MAX_POSITIONS  = 50; // cap to avoid unbounded localStorage growth
+
+function getPositionKey(): string {
+  // Normalise URL: strip fragment, preserve path+query for per-article memory
+  try {
+    const u = new URL(location.href);
+    return u.origin + u.pathname + (u.search || '');
+  } catch {
+    return location.href;
+  }
+}
+
+function saveReadingPosition(wordIndex: number): void {
+  if (wordIndex <= 0) return; // don't save position 0 — that means "from start"
+  try {
+    const raw = localStorage.getItem(POS_MEMORY_KEY);
+    const map: Record<string, number> = raw ? JSON.parse(raw) : {};
+    map[getPositionKey()] = wordIndex;
+    // Prune oldest entries if over cap
+    const keys = Object.keys(map);
+    if (keys.length > MAX_POSITIONS) {
+      delete map[keys[0]!];
+    }
+    localStorage.setItem(POS_MEMORY_KEY, JSON.stringify(map));
+  } catch { /* ignore */ }
+}
+
+function loadReadingPosition(): number {
+  try {
+    const raw = localStorage.getItem(POS_MEMORY_KEY);
+    if (!raw) return 0;
+    const map: Record<string, number> = JSON.parse(raw);
+    return map[getPositionKey()] ?? 0;
+  } catch {
+    return 0;
+  }
+}
+
+function clearReadingPosition(): void {
+  try {
+    const raw = localStorage.getItem(POS_MEMORY_KEY);
+    if (!raw) return;
+    const map: Record<string, number> = JSON.parse(raw);
+    delete map[getPositionKey()];
+    localStorage.setItem(POS_MEMORY_KEY, JSON.stringify(map));
+  } catch { /* ignore */ }
+}
+
+// ─── Per-site settings ────────────────────────────────────────────────────────
+
+function getSiteDomain(): string {
+  try { return new URL(location.href).hostname; } catch { return ''; }
+}
+
+async function loadSiteSettings(): Promise<void> {
+  try {
+    const res = await chrome.storage.sync.get('siteSettings');
+    if (res.siteSettings && typeof res.siteSettings === 'object') {
+      siteSettingsCache = res.siteSettings as Record<string, SiteSettings>;
+    }
+  } catch { /* ignore */ }
+}
+
+async function saveSiteSettings(domain: string, voiceName: string, rate: number, autoScroll: boolean, sleepTimerMinutes: number): Promise<void> {
+  siteSettingsCache[domain] = { voiceName, rate, autoScroll, sleepTimerMinutes };
+  await chrome.storage.sync.set({ siteSettings: siteSettingsCache });
+}
+
+async function clearSiteSettings(domain: string): Promise<void> {
+  delete siteSettingsCache[domain];
+  await chrome.storage.sync.set({ siteSettings: siteSettingsCache });
+}
+
+function applySiteSettings(): void {
+  const domain = getSiteDomain();
+  const site = siteSettingsCache[domain];
+  if (!site) return;
+  if (site.voiceName) state.voiceName = site.voiceName;
+  if (site.rate)      state.rate      = site.rate;
+  if (site.autoScroll != null) {
+    autoScrollEnabled = site.autoScroll;
+    state.autoScroll  = site.autoScroll;
+  }
+  if (site.sleepTimerMinutes != null && site.sleepTimerMinutes > 0) {
+    state.sleepTimerMinutes = site.sleepTimerMinutes;
+    sleepTimerRemainingMs   = site.sleepTimerMinutes * 60 * 1000;
+  }
+  LOG('site settings applied for', domain, ':', site);
+}
+
+// ─── Sleep timer ──────────────────────────────────────────────────────────────
+
+// Remaining ms when the timer was last paused/stopped
+let sleepTimerRemainingMs = 0;
+
+function setSleepTimer(minutes: number): void {
+  // Just store the selection — don't start counting yet
+  pauseSleepTimer();
+  state.sleepTimerMinutes = minutes;
+  state.sleepTimerEndsAt  = 0;
+  sleepTimerRemainingMs   = minutes > 0 ? minutes * 60 * 1000 : 0;
+  broadcastState();
+  toolbar?.updateState(buildToolbarState());
+  chrome.storage.sync.set({ sleepTimerMinutes: minutes }).catch(() => {});
+}
+
+function resumeSleepTimer(): void {
+  // Called when playback starts/resumes — only if a timer is configured and not already running
+  if (state.sleepTimerMinutes <= 0 || sleepTimerRemainingMs <= 0) return;
+  if (sleepTimerHandle !== null) return; // already running, don't reset
+  clearSleepTimerHandle();
+  const endsAt = Date.now() + sleepTimerRemainingMs;
+  state.sleepTimerEndsAt = endsAt;
+  broadcastState();
+  toolbar?.updateState(buildToolbarState());
+  sleepTimerHandle = setTimeout(() => {
+    LOG('sleep timer fired — stopping playback');
+    const originalMinutes    = state.sleepTimerMinutes; // keep the selection
+    sleepTimerHandle         = null;
+    sleepTimerRemainingMs    = originalMinutes * 60 * 1000; // reset to full duration
+    state.sleepTimerEndsAt   = 0; // not running until next play
+    // keep state.sleepTimerMinutes intact so the preset button stays highlighted
+    stopReading();
+    showToolbarError('Sleep timer: reading stopped');
+  }, sleepTimerRemainingMs);
+}
+
+function pauseSleepTimer(): void {
+  // Called when playback pauses — freeze the remaining time but keep displaying
+  if (sleepTimerHandle === null) return;
+  if (state.sleepTimerEndsAt > 0) {
+    sleepTimerRemainingMs = Math.max(0, state.sleepTimerEndsAt - Date.now());
+  }
+  clearSleepTimerHandle();
+  // Keep sleepTimerEndsAt as a display value showing remaining time from now
+  // so the badge stays visible — set it to now + remaining
+  state.sleepTimerEndsAt = sleepTimerRemainingMs > 0 ? Date.now() + sleepTimerRemainingMs : 0;
+  broadcastState();
+  toolbar?.updateState(buildToolbarState());
+}
+
+function clearSleepTimerHandle(): void {
+  if (sleepTimerHandle !== null) {
+    clearTimeout(sleepTimerHandle);
+    sleepTimerHandle = null;
+  }
+}
+
+function clearSleepTimer(): void {
+  clearSleepTimerHandle();
+  sleepTimerRemainingMs   = 0;
+  state.sleepTimerMinutes = 0;
+  state.sleepTimerEndsAt  = 0;
+}
 
 // ─── Toolbar factory ──────────────────────────────────────────────────────────
 
@@ -76,6 +252,11 @@ function buildToolbarState(): ToolbarState {
     highlightTheme: currentTheme,
     hoverBorderEnabled,
     favoriteVoices,
+    autoScroll: autoScrollEnabled,
+    sleepTimerMinutes: state.sleepTimerMinutes,
+    sleepTimerEndsAt: state.sleepTimerEndsAt,
+    siteDomain: getSiteDomain(),
+    siteSettingsCache,
   };
 }
 
@@ -86,17 +267,13 @@ function createToolbar(): FloatingToolbar {
       onPlay: (mode) => {
         LOG('toolbar onPlay — mode:', mode);
         if (mode === 'selection') {
-          // Clear any pre-built walkResult so we get a fresh DOM walk
           walkResult?.restore();
           walkResult = null;
           startReading('selection').catch(e => ERR('startReading threw:', e));
         } else if (mode === 'click') {
-          // Click mode — don't start speech immediately; arm the click listener
-          // and show a hint. Speech starts when the user clicks a paragraph.
           enableClickToRead();
           showToolbarError('Click any paragraph to start reading');
         } else {
-          // page mode — start from beginning of page
           startReading('page').catch(e => ERR('startReading threw:', e));
         }
       },
@@ -111,12 +288,11 @@ function createToolbar(): FloatingToolbar {
         teardown();
       },
       onVoiceChange: async (voiceName) => {
-        LOG('voiceChange:', voiceName, '| previous:', state.voiceName);
+        LOG('voiceChange:', voiceName);
         state.voiceName = voiceName;
         tts?.updateOptions({ voiceName });
         await chrome.storage.sync.set({ voiceName });
       },
-      // Fix #2 — debounced storage writes for slider callbacks
       onSpeedChange: (rate) => {
         state.rate = rate;
         tts?.updateOptionsAndRestart({ rate });
@@ -135,26 +311,16 @@ function createToolbar(): FloatingToolbar {
       onModeChange: async (mode) => {
         LOG('modeChange:', mode);
         state.mode = mode;
-        // Stop any active playback and clear walk so next Play starts fresh
-        if (tts) {
-          tts.stop();
-          tts = null;
-        }
-        // Don't restore DOM spans — just null the reference so next Play re-walks.
-        // Keeping spans in DOM lets hover/click still work immediately.
+        if (tts) { tts.stop(); tts = null; }
         walkResult = null;
         walkPromise = null;
         setState({ status: 'stopped', currentWord: '', wordIndex: 0, currentSentence: '' });
-        // Persist the mode
         await chrome.storage.sync.set({ mode });
-        // Arm/disarm click-to-read based on mode switch
         if (mode === 'click') {
           enableClickToRead();
         } else if (mode === 'page') {
-          // Keep click-to-read armed in page mode — clicking a word starts from that word
           enableClickToRead();
         } else {
-          // 'selection' mode — disarm click-to-read if no active playback
           if (state.status === 'stopped' || state.status === 'loading') {
             disableClickToRead();
           }
@@ -170,7 +336,6 @@ function createToolbar(): FloatingToolbar {
         LOG('hoverBorderToggle:', enabled);
         hoverBorderEnabled = enabled;
         if (!enabled) {
-          // Fix #5 — clear tracked element instead of querySelectorAll
           if (lastHoveredClickable) {
             lastHoveredClickable.classList.remove('spokn-clickable-hover');
             lastHoveredClickable = null;
@@ -188,6 +353,45 @@ function createToolbar(): FloatingToolbar {
         await chrome.storage.sync.set({ favoriteVoices: favorites });
       },
       getVoiceName: () => state.voiceName,
+
+      // Feature: skip/rewind sentence
+      onSkipSentence: (direction) => {
+        LOG('skipSentence:', direction);
+        skipSentence(direction);
+      },
+
+      // Feature: auto-scroll toggle
+      onAutoScrollToggle: async (enabled) => {
+        LOG('autoScroll:', enabled);
+        autoScrollEnabled = enabled;
+        state.autoScroll = enabled;
+        tts?.updateOptions({ autoScroll: enabled });
+        toolbar?.updateState(buildToolbarState());
+        await chrome.storage.sync.set({ autoScroll: enabled });
+      },
+
+      // Feature: sleep timer
+      onSleepTimerChange: (minutes) => {
+        LOG('sleepTimer:', minutes);
+        setSleepTimer(minutes);
+      },
+
+      // Feature: per-site settings
+      onSaveSiteSettings: async (domain, voiceName, rate, autoScroll, sleepTimerMinutes) => {
+        LOG('saveSiteSettings:', domain, voiceName, rate, autoScroll, sleepTimerMinutes);
+        await saveSiteSettings(domain, voiceName, rate, autoScroll, sleepTimerMinutes);
+        toolbar?.updateState(buildToolbarState());
+      },
+      onClearSiteSettings: async (domain) => {
+        LOG('clearSiteSettings:', domain);
+        await clearSiteSettings(domain);
+        toolbar?.updateState(buildToolbarState());
+      },
+
+      // Feature: open reader page
+      onOpenReaderPage: () => {
+        chrome.runtime.sendMessage({ type: 'OPEN_READER_PAGE' } as Message).catch(() => {});
+      },
     },
     buildToolbarState(),
   );
@@ -210,26 +414,18 @@ function setState(partial: Partial<PlaybackState>): void {
 async function startReading(
   mode: 'selection' | 'page' | 'click',
   fromElement?: Element,
+  fromWordIndex?: number,
 ): Promise<void> {
-  LOG('startReading() — mode:', mode, fromElement ? 'from element' : '');
+  LOG('startReading() — mode:', mode, fromElement ? 'from element' : '', fromWordIndex != null ? `from word ${fromWordIndex}` : '');
 
-  // Show loading state and yield two animation frames so the browser paints
-  // the spinner before the synchronous DOM walk blocks the main thread.
   setState({ status: 'loading' });
   await new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
 
-  // Clean up any previous TTS session
-  if (tts) {
-    tts.stop();
-    tts = null;
-  }
+  if (tts) { tts.stop(); tts = null; }
 
-  // Walk DOM — reuse existing walkResult if already walked (e.g. from toolbar open)
-  let startWordIndex = 0;
+  let startWordIndex = fromWordIndex ?? 0;
   try {
     if (mode === 'selection') {
-      // If walkResult was pre-populated (e.g. via walkText fallback), reuse it.
-      // Otherwise do a fresh DOM walk of the live selection.
       if (!walkResult) {
         const sel = window.getSelection();
         LOG('selection:', sel?.toString().slice(0, 60));
@@ -238,8 +434,6 @@ async function startReading(
         LOG('selection: reusing pre-built walkResult, words:', walkResult.words.length);
       }
     } else if (!walkResult) {
-      // Page walk not done yet — await the in-progress eager walk if there is
-      // one, otherwise start a fresh walk now.
       if (walkPromise) {
         LOG('awaiting in-progress walk...');
         walkResult = await walkPromise;
@@ -251,15 +445,23 @@ async function startReading(
         LOG('walkPage words:', walkResult.words.length);
       }
     }
-    // Fix #1 — build sentence cache after every walk
     buildSentenceCache(walkResult);
 
-    // If a click element was provided, find its index in the word list.
     if (fromElement && walkResult) {
       const idx = walkResult.words.findIndex(
         w => w.span.isSameNode(fromElement) || fromElement.contains(w.span),
       );
       if (idx >= 0) startWordIndex = idx;
+    }
+
+    // Feature: reading position memory — resume from last position if starting from page mode
+    if (mode !== 'selection' && fromWordIndex == null && !fromElement) {
+      const saved = loadReadingPosition();
+      if (saved > 0 && saved < (walkResult?.words.length ?? 0)) {
+        startWordIndex = saved;
+        LOG('resumed from saved position:', saved);
+        showToolbarError(`Resumed from where you left off`);
+      }
     }
   } catch (e) {
     ERR('DOM walk failed:', e);
@@ -268,15 +470,12 @@ async function startReading(
     return;
   }
 
-  // walkResult is guaranteed non-null here — we always assign it above
   // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
   let result = walkResult!;
 
   if (result.words.length === 0) {
     ERR('No readable words found for mode:', mode);
     if (mode === 'selection') {
-      // No text selected — tell the user explicitly instead of silently
-      // falling back to page mode, which makes Selection feel identical to Full Page.
       showToolbarError('No text selected. Highlight some text first.');
       setState({ status: 'stopped' });
       return;
@@ -289,8 +488,6 @@ async function startReading(
 
   LOG('words to speak:', result.words.length, '— first:', result.words[0]?.word);
 
-
-  // Check speechSynthesis is available
   if (typeof speechSynthesis === 'undefined') {
     ERR('speechSynthesis not available on this page');
     setState({ status: 'stopped' });
@@ -298,12 +495,6 @@ async function startReading(
     return;
   }
 
-  // Use in-memory state as the single source of truth — it was already loaded
-  // from storage during init and kept in sync by every slider/picker callback.
-  // Re-reading storage here caused stale values (e.g. rate: 2) to override the
-  // current in-memory state when a new play session started.
-  // Snapshot voice name at call time so TTS is created with the right voice.
-  // We do NOT use this closed-over value in the 'start' handler — see below.
   const voiceName = state.voiceName || '';
   const rate      = state.rate   ?? 1.0;
   const pitch     = state.pitch  ?? 1.0;
@@ -311,39 +502,31 @@ async function startReading(
 
   LOG('TTS settings — voice:', voiceName || '(default)', 'rate:', rate, 'pitch:', pitch, 'vol:', volume);
 
-  tts = new TTS({ voiceName, rate, pitch, volume });
+  tts = new TTS({ voiceName, rate, pitch, volume, autoScroll: autoScrollEnabled });
 
   tts.on((event) => {
     switch (event.type) {
       case 'start':
-        LOG('TTS started — voice in TTS options:', voiceName, '| state.voiceName at start event:', state.voiceName);
-        // Use state.voiceName (live) instead of the closed-over `voiceName` local.
-        // Reason: populateVoices() or other async callbacks can fire between
-        // startReading() and the 'start' event, changing state.voiceName.
-        // Using the closed-over value would silently revert it back to the
-        // stale snapshot, causing the voice to switch on subsequent clicks.
-        //
-        // Do NOT overwrite state.mode here — `mode` is the walk strategy
-        // ('page' when click-to-read triggers startReading('page',...)) which
-        // is different from the user's selected UI mode ('click'). Overwriting
-        // it would silently switch the toolbar back to Full Page after the
-        // first click-to-read session ends.
         setState({
           status: 'playing',
-          voiceName: state.voiceName,   // ← live value, not closed-over snapshot
+          voiceName: state.voiceName,
           rate: state.rate, pitch: state.pitch, volume: state.volume,
           totalWords: result.words.length,
           wordIndex: startWordIndex,
         });
+        resumeSleepTimer();
         break;
 
       case 'word': {
         const idx  = event.wordIndex ?? 0;
         const word = event.word ?? '';
-        // Fix #1 — O(1) sentence lookup via pre-computed cache
         const sentIdx  = result.words[idx]?.sentenceIndex ?? 0;
         const sentence = sentenceCache.get(sentIdx) ?? '';
         setState({ currentWord: word, wordIndex: idx, currentSentence: sentence });
+        // Feature: position memory — save position periodically (every 10 words)
+        if (idx % 10 === 0 && state.mode !== 'selection') {
+          saveReadingPosition(idx);
+        }
         chrome.runtime.sendMessage({
           type: 'WORD_BOUNDARY', wordIndex: idx, word,
         } satisfies Message).catch(() => {});
@@ -353,18 +536,24 @@ async function startReading(
       case 'pause':
         LOG('TTS paused');
         setState({ status: 'paused' });
+        pauseSleepTimer();
+        if (state.mode !== 'selection') saveReadingPosition(state.wordIndex);
         break;
 
       case 'resume':
         LOG('TTS resumed');
         setState({ status: 'playing' });
+        resumeSleepTimer();
         break;
 
       case 'stop':
       case 'end':
         LOG('TTS', event.type);
         setState({ status: 'stopped', currentWord: '', wordIndex: 0, currentSentence: '' });
-        // Keep spans in DOM so hover still works — restore happens on toolbar close
+        if (event.type === 'end') {
+          // Finished reading — clear saved position
+          clearReadingPosition();
+        }
         tts = null;
         break;
 
@@ -372,11 +561,7 @@ async function startReading(
         LOG('TTS engine_error — showing recovery banner');
         setState({ status: 'stopped', currentWord: '', wordIndex: 0, currentSentence: '' });
         tts = null;
-        // The macOS AVSpeechSynthesizer resource has been exhausted for this
-        // Chrome session. No in-page recovery is possible — the user needs to
-        // restart Chrome. Show a clear message rather than a misleading retry.
         toolbar?.showEngineError(() => {
-          // Dismiss and let the user try manually restarting the extension
           toolbar?.dismissEngineError();
         }, null);
         break;
@@ -395,10 +580,22 @@ async function startReading(
 
 function stopReading(): void {
   LOG('stopReading()');
+  // Freeze timer but keep display showing remaining time
+  if (state.sleepTimerMinutes > 0) {
+    if (sleepTimerHandle !== null) {
+      sleepTimerRemainingMs = Math.max(0, state.sleepTimerEndsAt - Date.now());
+      clearSleepTimerHandle();
+    }
+    // Keep endsAt as a frozen snapshot so badge stays visible
+    state.sleepTimerEndsAt = sleepTimerRemainingMs > 0 ? Date.now() + sleepTimerRemainingMs : 0;
+  }
   tts?.stop();
   tts = null;
   toolbar?.dismissEngineError();
-  // Don't restore spans here — hover should still work while toolbar is open
+  // Save position on stop
+  if (state.mode !== 'selection' && state.wordIndex > 0) {
+    saveReadingPosition(state.wordIndex);
+  }
   state = {
     ...DEFAULT_STATE,
     voiceName: state.voiceName,
@@ -406,24 +603,65 @@ function stopReading(): void {
     pitch:  state.pitch,
     volume: state.volume,
     mode:   state.mode,
+    autoScroll: autoScrollEnabled,
   };
   broadcastState();
   toolbar?.updateState(buildToolbarState());
 }
 
-// Fix #4 — delegate to FloatingToolbar.showError() instead of reaching into private shadow
 function showToolbarError(msg: string): void {
   ERR('UI error:', msg);
   if (!toolbar?.isVisible()) return;
   toolbar.showError(msg);
 }
 
+// ─── Feature: Skip/rewind sentence ───────────────────────────────────────────
+
+function skipSentence(direction: 'next' | 'prev'): void {
+  if (!walkResult || walkResult.words.length === 0) return;
+
+  const currentWordIdx = state.wordIndex;
+  const currentWord = walkResult.words[currentWordIdx];
+  if (!currentWord) return;
+
+  const currentSentIdx = currentWord.sentenceIndex;
+  let targetSentIdx: number;
+
+  if (direction === 'next') {
+    targetSentIdx = currentSentIdx + 1;
+  } else {
+    // If we're more than 3 words into the sentence, go back to start of current
+    // Otherwise go to previous sentence
+    const wordsIntoSentence = walkResult.words
+      .slice(0, currentWordIdx)
+      .filter(w => w.sentenceIndex === currentSentIdx).length;
+    targetSentIdx = wordsIntoSentence > 3 ? currentSentIdx : currentSentIdx - 1;
+  }
+
+  // Find first word of target sentence
+  const targetWordIdx = walkResult.words.findIndex(w => w.sentenceIndex === targetSentIdx);
+  if (targetWordIdx < 0) {
+    if (direction === 'next') {
+      LOG('skipSentence next: already at last sentence');
+    }
+    return;
+  }
+
+  LOG('skipSentence', direction, '→ sentence', targetSentIdx, 'word', targetWordIdx);
+
+  // Capture playback intent BEFORE stopping (stop fires state change to 'stopped')
+  const wasActive = state.status === 'playing' || state.status === 'paused';
+  if (tts) { tts.stop(); tts = null; }
+
+  if (wasActive) {
+    startReading(state.mode === 'selection' ? 'selection' : 'page', undefined, targetWordIdx)
+      .catch(e => ERR('skipSentence startReading threw:', e));
+  }
+}
 
 // ─── Click-to-read ────────────────────────────────────────────────────────────
 
 const CLICKABLE = 'p,h1,h2,h3,h4,h5,h6,li,blockquote,td,th,article,section,main';
-
-// Fix #5 — track the currently highlighted element so onHover never needs querySelectorAll
 let lastHoveredClickable: Element | null = null;
 
 function enableClickToRead(): void {
@@ -440,7 +678,6 @@ function disableClickToRead(): void {
   document.removeEventListener('mouseover', onHover);
   document.removeEventListener('mouseout', onHoverOut);
   document.removeEventListener('click', onClickRead, true);
-  // Fix #5 — clear via tracked reference, no DOM scan
   if (lastHoveredClickable) {
     lastHoveredClickable.classList.remove('spokn-clickable-hover');
     lastHoveredClickable = null;
@@ -450,7 +687,6 @@ function disableClickToRead(): void {
 function onHover(e: MouseEvent): void {
   if (!hoverBorderEnabled) return;
   const next = (e.target as Element).closest(CLICKABLE);
-  // Fix #5 — remove from the tracked element instead of querySelectorAll
   if (lastHoveredClickable && lastHoveredClickable !== next) {
     lastHoveredClickable.classList.remove('spokn-clickable-hover');
   }
@@ -459,7 +695,6 @@ function onHover(e: MouseEvent): void {
 }
 
 function onHoverOut(e: MouseEvent): void {
-  // Only clear if the mouse is leaving to somewhere outside the highlighted element
   const related = (e as MouseEvent).relatedTarget as Element | null;
   const highlighted = (e.target as Element).closest(CLICKABLE) as Element | null;
   if (highlighted && (!related || !highlighted.contains(related))) {
@@ -472,8 +707,6 @@ function onClickRead(e: MouseEvent): void {
   if ((e.target as Element).closest('#spokn-host')) return;
   const el = (e.target as Element).closest(CLICKABLE);
   if (!el) return;
-
-  // Only intercept if toolbar is open and mode is not 'selection'
   if (!toolbar?.isVisible() || state.mode === 'selection') return;
 
   e.preventDefault();
@@ -481,9 +714,6 @@ function onClickRead(e: MouseEvent): void {
   el.classList.remove('spokn-clickable-hover');
   if (lastHoveredClickable === el) lastHoveredClickable = null;
 
-  // If the user clicked directly on a word span, pass that span so playback
-  // starts from that exact word. If they clicked empty space (not on any word
-  // span), do nothing — don't restart playback.
   const target = e.target as Element;
   const clickedSpan = target.classList.contains(WORD_CLASS)
     ? target
@@ -497,27 +727,22 @@ function onClickRead(e: MouseEvent): void {
 
 // ─── Toolbar teardown ─────────────────────────────────────────────────────────
 
-/** Full cleanup of everything the extension has added to the page. */
 function teardown(): void {
   LOG('teardown()');
-
-  // Grab local ref before nulling, so unmount always runs even if something throws
   const t = toolbar;
   toolbar = null;
 
-  // 1. Stop speech
+  clearSleepTimer();
+
   try { tts?.stop(); } catch { /* ignore */ }
   tts = null;
 
-  // 2. Remove all event listeners
   disableClickToRead();
 
-  // 3. Restore DOM — remove all spokn word/sentence spans
   try {
     if (walkResult) {
       walkResult.restore();
     } else {
-      // Fallback: brute-force remove any leftover spans
       document.querySelectorAll('.spokn-sentence').forEach(el => {
         const parent = el.parentNode;
         if (!parent) return;
@@ -536,14 +761,11 @@ function teardown(): void {
   walkPromise = null;
   sentenceCache = new Map();
 
-  // 4. Remove any lingering class decorations
   document.querySelectorAll('.spokn-clickable-hover, .spokn-word-active, .spokn-sentence-active')
     .forEach(el => el.classList.remove('spokn-clickable-hover', 'spokn-word-active', 'spokn-sentence-active'));
 
-  // 5. Remove injected <style> tag for highlight theme
   removeTheme();
 
-  // 6. Reset playback state
   state = {
     ...DEFAULT_STATE,
     voiceName: state.voiceName,
@@ -551,9 +773,9 @@ function teardown(): void {
     pitch:  state.pitch,
     volume: state.volume,
     mode:   state.mode,
+    autoScroll: autoScrollEnabled,
   };
 
-  // 7. Unmount toolbar UI — always runs because we grabbed the ref first
   t?.unmount();
 }
 
@@ -573,7 +795,6 @@ function toggleToolbar(showClickHint = false): void {
     toolbar = createToolbar();
     toolbar.mount();
     enableClickToRead();
-    // Re-apply theme since teardown removed the style tag
     applyTheme(currentTheme);
     LOG('toolbar mounted');
     if (showClickHint) {
@@ -587,8 +808,6 @@ function toggleToolbar(showClickHint = false): void {
     toolbarMounting = false;
   }
 
-  // Eagerly walk the page in the background so word spans exist immediately
-  // for CSS :hover and so click-to-word has the full word list ready.
   if (!walkResult && !walkPromise) {
     walkPromise = walkPageAsync();
     walkPromise.then(result => {
@@ -607,23 +826,23 @@ function toggleToolbar(showClickHint = false): void {
 // ─── Reset all settings ───────────────────────────────────────────────────────
 
 async function resetAllSettings(): Promise<void> {
-  // Clear all persisted settings
   await chrome.storage.sync.clear();
-  // Clear saved toolbar position
   try { localStorage.removeItem('spokn-toolbar-pos'); } catch { /* ignore */ }
-  // Stop any active TTS
+  try { localStorage.removeItem('spokn-page-positions'); } catch { /* ignore */ }
   if (tts) { tts.stop(); tts = null; }
-  // Reset in-memory state to defaults
+  clearSleepTimer();
+  sleepTimerRemainingMs = 0;
   state.voiceName    = DEFAULT_STATE.voiceName;
   state.rate         = DEFAULT_STATE.rate;
   state.pitch        = DEFAULT_STATE.pitch;
   state.volume       = DEFAULT_STATE.volume;
   state.mode         = DEFAULT_STATE.mode;
+  state.autoScroll   = DEFAULT_STATE.autoScroll;
   hoverBorderEnabled = true;
   favoriteVoices     = [];
   currentTheme       = DEFAULT_THEME_ID;
-  // Rebuild toolbar with fresh state (if it's open), then re-apply theme
-  // AFTER teardown — teardown calls removeTheme() which strips the style tag.
+  autoScrollEnabled  = true;
+  siteSettingsCache  = {};
   const wasVisible = toolbar?.isVisible();
   if (wasVisible) {
     teardown();
@@ -631,7 +850,6 @@ async function resetAllSettings(): Promise<void> {
     toolbar.mount();
     enableClickToRead();
   }
-  // Apply theme last — after teardown() has had a chance to remove the old one
   applyTheme(DEFAULT_THEME_ID);
 }
 
@@ -647,7 +865,6 @@ chrome.runtime.onMessage.addListener(
         switch (msg.type) {
 
           case 'TOGGLE_TOOLBAR':
-            // Only the top-level frame mounts the toolbar
             if (window.self === window.top) {
               toggleToolbar((msg as any).showClickHint === true);
             }
@@ -655,7 +872,6 @@ chrome.runtime.onMessage.addListener(
             break;
 
           case 'OPEN_TOOLBAR':
-            // Open the toolbar without closing it if already open (used by shortcuts).
             if (window.self === window.top && !toolbar?.isVisible()) {
               toggleToolbar(false);
             }
@@ -663,7 +879,6 @@ chrome.runtime.onMessage.addListener(
             break;
 
           case 'READ_SELECTION': {
-            // Only handle in top frame or the frame that has the selection
             const sel = window.getSelection();
             const hasSelection = sel && !sel.isCollapsed && sel.toString().trim().length > 0;
             if (window.self !== window.top && !hasSelection) {
@@ -679,11 +894,8 @@ chrome.runtime.onMessage.addListener(
             toolbar?.updateState(buildToolbarState());
 
             if (hasSelection) {
-              // Normal path — DOM selection still intact
               await startReading('selection');
             } else if (msg.selectionText?.trim()) {
-              // Fallback — right-click dismissed the DOM selection on Mac before
-              // this message arrived; use the text captured by the background script.
               LOG('DOM selection gone, using selectionText fallback:', msg.selectionText.slice(0, 60));
               walkResult?.restore();
               walkResult = walkText(msg.selectionText);
@@ -785,6 +997,41 @@ chrome.runtime.onMessage.addListener(
             sendResponse({ success: true } satisfies MessageResponse);
             break;
 
+          // Feature: skip/rewind sentence
+          case 'SKIP_SENTENCE':
+            skipSentence(msg.direction);
+            sendResponse({ success: true } satisfies MessageResponse);
+            break;
+
+          // Feature: auto-scroll
+          case 'SET_AUTO_SCROLL':
+            autoScrollEnabled = msg.enabled;
+            state.autoScroll = msg.enabled;
+            toolbar?.updateState(buildToolbarState());
+            await chrome.storage.sync.set({ autoScroll: msg.enabled });
+            sendResponse({ success: true } satisfies MessageResponse);
+            break;
+
+          // Feature: sleep timer
+          case 'SET_SLEEP_TIMER':
+            setSleepTimer(msg.minutes);
+            sendResponse({ success: true } satisfies MessageResponse);
+            break;
+
+          // Feature: per-site settings
+          case 'SET_SITE_SETTINGS':
+            await saveSiteSettings(msg.domain, msg.voiceName, msg.rate, autoScrollEnabled, state.sleepTimerMinutes);
+            sendResponse({ success: true } satisfies MessageResponse);
+            break;
+
+          // Feature: open reader page — handled by onOpenReaderPage toolbar callback
+          // (content sends to background directly; background opens the tab)
+          case 'OPEN_READER_PAGE':
+            // This message is only ever sent content→background, never background→content.
+            // Silently succeed so it doesn't fall through to the "Unknown message" error.
+            sendResponse({ success: true } satisfies MessageResponse);
+            break;
+
           default:
             sendResponse({ success: false, error: 'Unknown message' } satisfies MessageResponse);
         }
@@ -802,21 +1049,32 @@ chrome.runtime.onMessage.addListener(
 
 (async () => {
   try {
-    const stored = await chrome.storage.sync.get(['voiceName', 'rate', 'pitch', 'volume', 'mode', 'highlightTheme', 'hoverBorderEnabled', 'favoriteVoices']);
+    await loadSiteSettings();
+    const stored = await chrome.storage.sync.get([
+      'voiceName', 'rate', 'pitch', 'volume', 'mode',
+      'highlightTheme', 'hoverBorderEnabled', 'favoriteVoices',
+      'autoScroll',
+    ]);
     if (stored.voiceName) state.voiceName = stored.voiceName as string;
     if (stored.rate   != null) state.rate   = stored.rate   as number;
     if (stored.pitch  != null) state.pitch  = stored.pitch  as number;
     if (stored.volume != null) state.volume = stored.volume as number;
-    // Restore last saved mode ('selection' is now persisted — it just won't auto-play on open)
     if (stored.mode) state.mode = stored.mode as typeof state.mode;
     if (stored.hoverBorderEnabled != null) hoverBorderEnabled = stored.hoverBorderEnabled as boolean;
     if (Array.isArray(stored.favoriteVoices)) favoriteVoices = stored.favoriteVoices as string[];
+    if (stored.autoScroll != null) {
+      autoScrollEnabled = stored.autoScroll as boolean;
+      state.autoScroll = autoScrollEnabled;
+    }
     if (stored.highlightTheme) {
       currentTheme = stored.highlightTheme as string;
       applyTheme(currentTheme);
     } else {
       applyTheme(DEFAULT_THEME_ID);
     }
+
+    // Apply per-site settings on top of global defaults
+    applySiteSettings();
 
     const voices = await getVoices();
     LOG('voices loaded:', voices.length);

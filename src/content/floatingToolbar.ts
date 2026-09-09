@@ -26,6 +26,13 @@ export interface ToolbarCallbacks {
   onFavoritesChange: (favorites: string[]) => void;
   /** Optional getter so populateVoices can read the live voice name from content.ts */
   getVoiceName?: () => string;
+  // Feature callbacks
+  onSkipSentence: (direction: 'next' | 'prev') => void;
+  onAutoScrollToggle: (enabled: boolean) => void;
+  onSleepTimerChange: (minutes: number) => void;
+  onSaveSiteSettings: (domain: string, voiceName: string, rate: number, autoScroll: boolean, sleepTimerMinutes: number) => void;
+  onClearSiteSettings: (domain: string) => void;
+  onOpenReaderPage: () => void;
 }
 
 export interface ToolbarState {
@@ -42,6 +49,12 @@ export interface ToolbarState {
   highlightTheme: string;
   hoverBorderEnabled: boolean;
   favoriteVoices: string[];
+  // New features
+  autoScroll: boolean;
+  sleepTimerMinutes: number;
+  sleepTimerEndsAt: number;
+  siteDomain: string;
+  siteSettingsCache: Record<string, { voiceName: string; rate: number; autoScroll: boolean; sleepTimerMinutes: number }>;
 }
 
 // ─── SVG icon library ─────────────────────────────────────────────────────────
@@ -63,6 +76,14 @@ const ICONS = {
   filetext: `<svg ${SVG_ATTRS}><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>`,
   pointer:  `<svg ${SVG_ATTRS}><path d="M4 4l7.07 17 2.51-7.39L21 11.07z"/></svg>`,
   cursor:   `<svg ${SVG_ATTRS}><path d="M5 3l14 9-7 1-4 7z"/></svg>`,
+  // Feature: skip sentence icons — same SVG, prev is mirrored with CSS
+  skipNext: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="10 25 80 50" width="13" height="13" fill="currentColor" aria-hidden="true"><path d="M74.22 45.88 43.49 25.61a4.03 4.03 0 0 0-3.75-.12c-1.38.8-2.23 2.42-2.23 4.24v10.08l-21.52-14.2a4.03 4.03 0 0 0-3.75-.12c-1.38.8-2.23 2.42-2.23 4.24v40.55c0 1.82.86 3.44 2.23 4.24a4.03 4.03 0 0 0 3.75-.12l21.52-14.2v10.08c0 1.82.86 3.44 2.23 4.24.61.41 1.29.61 1.97.61s1.36-.2 1.97-.61l30.73-20.27c1.28-.84 2.04-2.38 2.04-4.12s-.76-3.28-2.04-4.12Z"/><path d="M83.72 25c-3.46 0-6.28 2.96-6.28 6.6v36.8c0 3.64 2.82 6.6 6.28 6.6S90 72.04 90 68.4V31.6c0-3.64-2.82-6.6-6.28-6.6Z"/></svg>`,
+  skipPrev: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="10 25 80 50" width="13" height="13" fill="currentColor" aria-hidden="true" class="skip-prev-icon"><path d="M74.22 45.88 43.49 25.61a4.03 4.03 0 0 0-3.75-.12c-1.38.8-2.23 2.42-2.23 4.24v10.08l-21.52-14.2a4.03 4.03 0 0 0-3.75-.12c-1.38.8-2.23 2.42-2.23 4.24v40.55c0 1.82.86 3.44 2.23 4.24a4.03 4.03 0 0 0 3.75-.12l21.52-14.2v10.08c0 1.82.86 3.44 2.23 4.24.61.41 1.29.61 1.97.61s1.36-.2 1.97-.61l30.73-20.27c1.28-.84 2.04-2.38 2.04-4.12s-.76-3.28-2.04-4.12Z"/><path d="M83.72 25c-3.46 0-6.28 2.96-6.28 6.6v36.8c0 3.64 2.82 6.6 6.28 6.6S90 72.04 90 68.4V31.6c0-3.64-2.82-6.6-6.28-6.6Z"/></svg>`,
+  // Feature: reader page
+  bookOpen: `<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg>`,
+  // Expand/collapse chevron
+  chevronDown: `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"/></svg>`,
+  chevronUp:   `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="18 15 12 9 6 15"/></svg>`,
 } as const;
 
 const SPEED_PRESETS = [0.5, 0.8, 1.0, 1.5, 2.0, 2.5, 3.0];
@@ -75,6 +96,7 @@ export class FloatingToolbar {
   private cb: ToolbarCallbacks;
   private st: ToolbarState;
   private settingsOpen = false;
+  private pillExpanded = false;
 
   // Drag
   private dragging = false;
@@ -87,6 +109,9 @@ export class FloatingToolbar {
 
   // Fix #11 — CSS is computed once and reused across all render() calls
   private static readonly STATIC_CSS: string = FloatingToolbar.buildCSS();
+
+  // Sleep timer countdown ticker
+  private sleepTickInterval: ReturnType<typeof setInterval> | null = null;
 
   private boundMouseMove: (e: MouseEvent) => void;
   private boundMouseUp: () => void;
@@ -148,6 +173,7 @@ export class FloatingToolbar {
   unmount(): void {
     document.removeEventListener('mousemove', this.boundMouseMove);
     document.removeEventListener('mouseup', this.boundMouseUp);
+    this.clearSleepTick();
     this.host?.remove();
     this.host = null;
     this.shadow = null;
@@ -158,9 +184,50 @@ export class FloatingToolbar {
 
   isVisible(): boolean { return this.host !== null; }
 
-  // Fix #4 — public method so content.ts no longer needs to access private shadow
-  showError(msg: string): void {
+  private renderSiteBtn(wrap: HTMLElement): void {
+    wrap.querySelectorAll('.site-settings-btn').forEach(b => b.remove());
+    const hasSaved = !!this.st.siteSettingsCache[this.st.siteDomain];
+    const btn = document.createElement('button');
+    btn.className   = `site-settings-btn ${hasSaved ? 'site-settings-clear' : 'site-settings-save'}`;
+    btn.title       = hasSaved
+      ? 'Clear saved settings for this site'
+      : `Save voice, speed, auto-scroll & sleep timer for ${this.st.siteDomain}`;
+    btn.textContent = hasSaved ? 'Clear site settings' : 'Save for this site';
+    btn.addEventListener('click', () => {
+      const savedNow = !!this.st.siteSettingsCache[this.st.siteDomain];
+      if (savedNow) {
+        this.cb.onClearSiteSettings(this.st.siteDomain);
+        this.showToast('Site settings cleared');
+      } else {
+        this.cb.onSaveSiteSettings(this.st.siteDomain, this.st.voiceName, this.st.rate, this.st.autoScroll, this.st.sleepTimerMinutes);
+        this.showToast(`Saved voice, speed, scroll & sleep for ${this.st.siteDomain}`);
+      }
+      setTimeout(() => this.renderSiteBtn(wrap), 50);
+    });
+    wrap.appendChild(btn);
+  }
+
+  showToast(msg: string): void {
     if (!this.shadow) return;
+    const existing = this.shadow.getElementById('spokn-toast');
+    if (existing) existing.remove();
+    const toast = document.createElement('div');
+    toast.id = 'spokn-toast';
+    toast.textContent = msg;
+    // Append as a new row inside the site-settings-row, below the button
+    const row = this.shadow.querySelector<HTMLElement>('.site-settings-row');
+    if (row) {
+      row.appendChild(toast);
+      requestAnimationFrame(() => toast.classList.add('spokn-toast-visible'));
+      setTimeout(() => {
+        toast.classList.remove('spokn-toast-visible');
+        setTimeout(() => toast.remove(), 300);
+      }, 2000);
+    }
+  }
+
+  // Fix #4 — public method so content.ts no longer needs to access private shadow
+  showError(msg: string): void {    if (!this.shadow) return;
     // Show a tooltip above the play button
     let tip = this.shadow.getElementById('spokn-tooltip') as HTMLElement | null;
     if (!tip) return;
@@ -245,12 +312,9 @@ export class FloatingToolbar {
     }
 
     // Only sync sliders when the underlying value actually changed.
-    // Syncing on every word-boundary update (many times/sec) would fight the
-    // user's drag and cause the thumb to flash back to the old position.
     if (this.st.rate !== prev.rate) {
       this.syncInput('spokn-speed-slider', this.st.rate);
       this.syncSliderFill('spokn-speed-slider', this.st.rate, 0.5, 3.0);
-      // Sync speed preset active state
       this.shadow.querySelectorAll<HTMLButtonElement>('.speed-preset-btn').forEach(btn => {
         const p = parseFloat(btn.dataset.preset ?? '0');
         const active = Math.abs(this.st.rate - p) < 0.01;
@@ -267,16 +331,40 @@ export class FloatingToolbar {
       this.syncSliderFill('spokn-vol-slider', this.st.volume, 0, 1);
     }
 
-    // Update estimated time remaining on every word advance
+    // Update estimated time remaining
     if (this.st.wordIndex !== prev.wordIndex || this.st.totalWords !== prev.totalWords || this.st.rate !== prev.rate) {
       const timeEl = this.shadow.getElementById('spokn-time-remaining');
       if (timeEl) timeEl.textContent = this.formatTimeRemaining();
+    }
+
+    // Feature: sleep timer countdown — re-evaluate on status change or timer change
+    if (this.st.sleepTimerEndsAt !== prev.sleepTimerEndsAt ||
+        this.st.sleepTimerMinutes !== prev.sleepTimerMinutes ||
+        this.st.status !== prev.status) {
+      this.updateSleepTimerDisplay();
+    }
+
+    // Skip buttons — only visible when playing or paused
+    if (this.st.status !== prev.status) {
+      const active = this.st.status === 'playing' || this.st.status === 'paused';
+      const skipPrev = this.shadow.getElementById('spokn-skip-prev') as HTMLElement | null;
+      const skipNext = this.shadow.getElementById('spokn-skip-next') as HTMLElement | null;
+      if (skipPrev) skipPrev.style.display = active ? 'flex' : 'none';
+      if (skipNext) skipNext.style.display = active ? 'flex' : 'none';
     }
 
     // Update click-mode indicator on the pill
     if (this.st.mode !== prev.mode) {
       const pill = this.shadow.getElementById('spokn-pill');
       pill?.classList.toggle('click-mode-active', this.st.mode === 'click');
+    }
+
+    // Feature: per-site settings — re-render the save/clear button only when panel is open
+    if (this.st.siteDomain && this.settingsOpen) {
+      const wrap = this.shadow.querySelector<HTMLElement>('.site-settings-wrap');
+      if (wrap && !wrap.querySelector('.site-settings-btn')) {
+        this.renderSiteBtn(wrap);
+      }
     }
   }
 
@@ -310,9 +398,6 @@ export class FloatingToolbar {
     const speedPct  = ((rate   - 0.5) / 2.5)  * 100;
     const pitchPct  = ((pitch  - 0.5) / 1.5)  * 100;
     const volPct    = volume * 100;
-
-    const modeIcon = (_m: string) => '';
-    const modeLabel = (_m: string) => '';
 
     return `
       <div id="spokn-settings" class="${this.settingsOpen ? 'open' : ''}">
@@ -439,6 +524,46 @@ export class FloatingToolbar {
         </div>
 
         <div class="settings-section">
+          <div class="settings-section-title">Features</div>
+
+          <!-- Feature: auto-scroll toggle -->
+          <div class="settings-row">
+            <span class="settings-label">Scroll</span>
+            <label class="toggle-wrap" title="Automatically scroll to keep reading position in view">
+              <input type="checkbox" id="spokn-autoscroll-toggle"
+                ${this.st.autoScroll ? 'checked' : ''}
+                aria-label="Auto-scroll">
+              <span class="toggle-track"><span class="toggle-thumb"></span></span>
+              <span class="toggle-label">Auto-scroll with reading</span>
+            </label>
+          </div>
+
+          <!-- Feature: sleep timer -->
+          <div class="settings-row">
+            <span class="settings-label">Sleep</span>
+            <div class="sleep-presets" role="group" aria-label="Sleep timer">
+              ${[0, 5, 10, 15, 30, 60].map(m => `
+                <button class="sleep-preset-btn${this.st.sleepTimerMinutes === m ? ' sleep-preset-active' : ''}"
+                  data-sleep="${m}" aria-pressed="${this.st.sleepTimerMinutes === m}"
+                  aria-label="${m === 0 ? 'Off' : `${m} minutes`}">
+                  ${m === 0 ? 'Off' : `${m}m`}
+                </button>
+              `).join('')}
+            </div>
+          </div>
+
+          <!-- Feature: per-site settings -->
+          ${this.st.siteDomain ? `
+          <div class="settings-row site-settings-row">
+            <span class="settings-label">Site</span>
+            <div class="site-settings-wrap">
+              <span class="site-domain">${this.st.siteDomain}</span>
+            </div>
+          </div>` : ''}
+
+        </div>
+
+        <div class="settings-section">
           <div class="settings-section-title">Appearance</div>
 
           <div class="settings-row">
@@ -529,7 +654,8 @@ export class FloatingToolbar {
           ${ICONS.close}
         </button>
 
-        <div id="spokn-pill" class="${this.settingsOpen ? 'settings-open' : ''}">
+        <div id="spokn-pill" class="${this.settingsOpen ? 'settings-open' : ''}${(isPlaying || this.st.status === 'paused') ? ' is-active' : ''}">
+
           <div id="spokn-toolbar">
             <div id="spokn-drag" title="Drag to move" aria-hidden="true">${ICONS.grip}</div>
 
@@ -539,16 +665,55 @@ export class FloatingToolbar {
               ${isPlaying ? ICONS.pause : ICONS.play}
             </button>
 
+            <!-- Feature: sleep timer badge — compact mm:ss -->
+            <span id="spokn-sleep-timer-display" class="sleep-timer-badge"
+              style="display:${this.st.sleepTimerEndsAt > 0 ? 'flex' : 'none'}">
+              ${this.st.sleepTimerEndsAt > 0
+                ? (() => {
+                    const left = Math.max(0, this.st.sleepTimerEndsAt - Date.now());
+                    const m = Math.floor(left / 60000);
+                    const s = Math.floor((left % 60000) / 1000);
+                    return `${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
+                  })()
+                : ''}
+            </span>
+
             <div id="spokn-settings-divider"></div>
 
             <button id="spokn-settings-toggle"
               class="btn${this.settingsOpen ? ' btn-active' : ''}"
               aria-label="Settings" title="Settings"
-            aria-expanded="${this.settingsOpen}">
-            ${ICONS.settings}
-          </button>
+              aria-expanded="${this.settingsOpen}">
+              ${ICONS.settings}
+            </button>
+
+            <!-- Expand/collapse toggle — always at bottom above expanded items -->
+            <button id="spokn-expand-toggle" class="btn btn-expand"
+              aria-label="${this.pillExpanded ? 'Collapse' : 'Expand'}"
+              title="${this.pillExpanded ? 'Collapse' : 'Show more controls'}">
+              ${this.pillExpanded ? ICONS.chevronUp : ICONS.chevronDown}
+            </button>
+
+            <!-- Expanded section: skip + reader -->
+            <div id="spokn-expanded-section" class="expanded-section${this.pillExpanded ? ' expanded-section-open' : ''}">
+              <button id="spokn-skip-prev" class="btn btn-skip"
+                aria-label="Previous sentence" title="Previous sentence"
+                style="display:${(isPlaying || this.st.status === 'paused') ? 'flex' : 'none'}">
+                ${ICONS.skipPrev}
+              </button>
+              <button id="spokn-skip-next" class="btn btn-skip"
+                aria-label="Next sentence" title="Next sentence"
+                style="display:${(isPlaying || this.st.status === 'paused') ? 'flex' : 'none'}">
+                ${ICONS.skipNext}
+              </button>
+              <button id="spokn-reader-btn" class="btn btn-reader"
+                aria-label="Open Reader" title="Open Reader — paste text or load a PDF">
+                ${ICONS.bookOpen}
+              </button>
+            </div>
+
+          </div>
         </div>
-      </div>
       </div>
     `;
   }
@@ -608,6 +773,24 @@ export class FloatingToolbar {
 
     s.getElementById('spokn-close')?.addEventListener('click', () => {
       this.cb.onClose();
+    });
+
+    // Reader page button
+    s.getElementById('spokn-reader-btn')?.addEventListener('click', () => {
+      this.cb.onOpenReaderPage();
+    });
+
+    // Expand / collapse toggle
+    s.getElementById('spokn-expand-toggle')?.addEventListener('click', () => {
+      this.pillExpanded = !this.pillExpanded;
+      const section = s.getElementById('spokn-expanded-section');
+      const btn     = s.getElementById('spokn-expand-toggle');
+      section?.classList.toggle('expanded-section-open', this.pillExpanded);
+      if (btn) {
+        btn.innerHTML     = this.pillExpanded ? ICONS.chevronUp : ICONS.chevronDown;
+        btn.setAttribute('aria-label', this.pillExpanded ? 'Collapse' : 'Expand');
+        btn.setAttribute('title',      this.pillExpanded ? 'Collapse' : 'Show more controls');
+      }
     });
 
     s.querySelectorAll('.mode-btn').forEach(btn => {
@@ -806,6 +989,41 @@ export class FloatingToolbar {
 
     s.getElementById('spokn-shortcuts-link')?.addEventListener('click', () => {
       chrome.runtime.sendMessage({ type: 'OPEN_SHORTCUTS_PAGE' });
+    });
+
+    // Feature: skip sentence buttons
+    s.getElementById('spokn-skip-prev')?.addEventListener('click', () => {
+      this.cb.onSkipSentence('prev');
+    });
+    s.getElementById('spokn-skip-next')?.addEventListener('click', () => {
+      this.cb.onSkipSentence('next');
+    });
+
+    // Feature: auto-scroll toggle
+    s.getElementById('spokn-autoscroll-toggle')?.addEventListener('change', (e) => {
+      const enabled = (e.target as HTMLInputElement).checked;
+      this.st.autoScroll = enabled;
+      this.cb.onAutoScrollToggle(enabled);
+    });
+
+    // Feature: per-site settings — wire button on first render
+    if (this.st.siteDomain) {
+      const wrap = s.querySelector<HTMLElement>('.site-settings-wrap');
+      if (wrap) this.renderSiteBtn(wrap);
+    }
+
+    // Feature: sleep timer preset buttons
+    s.querySelectorAll<HTMLButtonElement>('.sleep-preset-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const m = parseInt(btn.dataset.sleep ?? '0', 10);
+        this.st.sleepTimerMinutes = m;
+        s.querySelectorAll<HTMLButtonElement>('.sleep-preset-btn').forEach(b => {
+          const active = parseInt(b.dataset.sleep ?? '-1', 10) === m;
+          b.classList.toggle('sleep-preset-active', active);
+          b.setAttribute('aria-pressed', String(active));
+        });
+        this.cb.onSleepTimerChange(m);
+      });
     });
 
     s.getElementById('spokn-drag')?.addEventListener('mousedown', (e: Event) => {
@@ -1195,6 +1413,50 @@ export class FloatingToolbar {
     return `~${Math.ceil(minutes)} min remaining`;
   }
 
+  // ─── Sleep timer display ──────────────────────────────────────────────────────
+
+  private clearSleepTick(): void {
+    if (this.sleepTickInterval !== null) {
+      clearInterval(this.sleepTickInterval);
+      this.sleepTickInterval = null;
+    }
+  }
+
+  private formatSleepTime(endsAt: number): string {
+    const left = Math.max(0, endsAt - Date.now());
+    const m = Math.floor(left / 60000);
+    const s = Math.floor((left % 60000) / 1000);
+    return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+  }
+
+  private updateSleepTimerDisplay(): void {
+    const el = this.shadow?.getElementById('spokn-sleep-timer-display');
+    if (!el) return;
+    if (this.st.sleepTimerMinutes > 0 && this.st.sleepTimerEndsAt > 0) {
+      el.textContent = this.formatSleepTime(this.st.sleepTimerEndsAt);
+      el.style.display = 'flex';
+      // Only tick when playing — badge shows frozen time when paused/stopped
+      const isPlaying = this.st.status === 'playing';
+      if (isPlaying && this.sleepTickInterval === null) {
+        this.sleepTickInterval = setInterval(() => {
+          const badge = this.shadow?.getElementById('spokn-sleep-timer-display');
+          if (!badge) { this.clearSleepTick(); return; }
+          if (this.st.sleepTimerEndsAt <= 0 || this.st.status !== 'playing') {
+            this.clearSleepTick();
+            return;
+          }
+          badge.textContent = this.formatSleepTime(this.st.sleepTimerEndsAt);
+        }, 1000);
+      } else if (!isPlaying) {
+        this.clearSleepTick();
+      }
+    } else {
+      el.textContent = '';
+      el.style.display = 'none';
+      this.clearSleepTick();
+    }
+  }
+
   // ─── CSS ──────────────────────────────────────────────────────────────────────
 
   // Fix #11 — static method called once to initialise STATIC_CSS
@@ -1343,7 +1605,7 @@ export class FloatingToolbar {
         display: flex;
         flex-direction: column;
         align-items: center;
-        gap: 6px;
+        gap: 4px;
         padding: 17px 7px 11px;
       }
 
@@ -1369,7 +1631,7 @@ export class FloatingToolbar {
         width: 24px;
         height: 1px;
         background: #28292C;
-        margin: 4px auto 0;
+        margin: 2px auto 0;
       }
 
       /* ── Buttons ─────────────────────────────────────────────────────────── */
@@ -2052,8 +2314,143 @@ export class FloatingToolbar {
         border-color: rgba(239,68,68,0.6);
       }
 
-      /* ── Engine error banner ─────────────────────────────────────────────── */
-      #spokn-engine-error-banner {
+      /* ── Expanded section ────────────────────────────────────────────────── */
+      .expanded-section {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 4px;
+        overflow: hidden;
+        max-height: 0;
+        opacity: 0;
+        transition: max-height 0.22s ease, opacity 0.18s ease;
+        pointer-events: none;
+      }
+      .expanded-section-open {
+        max-height: 160px;
+        opacity: 1;
+        pointer-events: auto;
+      }
+
+      /* ── Expand toggle button ─────────────────────────────────────────────── */
+      .btn-expand {
+        color: #BAB9BA;
+        width: 36px;
+        height: 28px;
+        border-radius: 6px;
+      }
+      .btn-expand:hover { color: #fff; background: transparent; }
+      .btn-expand svg { width: 20px; height: 20px; }
+
+      /* ── Skip sentence buttons ───────────────────────────────────────────── */
+      .btn-skip {
+        width: 44px;
+        height: 44px;
+        color: #BAB9BA;
+        background: transparent;
+        border-radius: 50%;
+        flex-shrink: 0;
+        padding: 0;
+      }
+      .btn-skip svg { width: 13px; height: 13px; }
+      .skip-prev-icon { transform: scaleX(-1); }
+      .btn-skip:hover { color: #fff; background: var(--surface-hv); }
+
+      /* ── Sleep timer badge on pill ───────────────────────────────────────── */
+      .sleep-timer-badge {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 10px;
+        font-weight: 700;
+        font-family: 'SF Mono', 'Fira Code', monospace;
+        color: #fbbf24;
+        letter-spacing: 0.04em;
+        width: 44px;
+        height: 20px;
+        flex-shrink: 0;
+      }
+
+      /* ── Sleep presets (in settings) ─────────────────────────────────────── */
+      .sleep-presets {
+        display: flex;
+        gap: 4px;
+        flex-wrap: wrap;
+        flex: 1;
+      }
+      .sleep-preset-btn {
+        all: unset;
+        padding: 3px 7px;
+        border-radius: 20px;
+        border: 1px solid var(--border);
+        color: var(--muted);
+        font-size: 10px;
+        font-family: inherit;
+        cursor: pointer;
+        transition: all 0.12s;
+        line-height: 1.4;
+      }
+      .sleep-preset-btn:hover { border-color: #fbbf24; color: var(--text); }
+      .sleep-preset-active {
+        background: rgba(251,191,36,0.18);
+        border-color: #fbbf24;
+        color: #fbbf24;
+        font-weight: 600;
+      }
+
+      /* ── Site settings toast ─────────────────────────────────────────────── */
+      #spokn-toast {
+        width: 100%;
+        text-align: center;
+        font-size: 10px;
+        font-family: inherit;
+        color: #34d399;
+        opacity: 0;
+        transition: opacity 0.2s ease;
+        padding: 4px 0 0;
+      }
+      #spokn-toast.spokn-toast-visible { opacity: 1; }
+
+      /* ── Per-site settings row ───────────────────────────────────────────── */
+      .site-settings-row { flex-direction: column; align-items: flex-start; gap: 6px; }
+      .site-settings-wrap { display: flex; align-items: center; gap: 8px; width: 100%; padding-left: 46px; flex-wrap: wrap; }
+      .site-domain {
+        font-size: 10px;
+        color: var(--subtle);
+        font-family: monospace;
+        max-width: 120px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .site-settings-btn {
+        all: unset;
+        font-size: 10px;
+        font-family: inherit;
+        padding: 3px 8px;
+        border-radius: 6px;
+        cursor: pointer;
+        transition: all 0.12s;
+        border: 1px solid;
+      }
+      .site-settings-save {
+        color: var(--accent);
+        border-color: rgba(2,119,212,0.4);
+      }
+      .site-settings-save:hover { background: rgba(2,119,212,0.12); border-color: var(--accent); }
+      .site-settings-clear {
+        color: #ef4444;
+        border-color: rgba(239,68,68,0.3);
+      }
+      .site-settings-clear:hover { background: rgba(239,68,68,0.1); border-color: rgba(239,68,68,0.6); }
+
+      /* ── Reader page button (pill) ───────────────────────────────────────── */
+      .btn-reader {
+        color: #BAB9BA;
+      }
+      .btn-reader:hover { color: #fff; }
+
+      /* ── Engine error banner ─────────────────────────────────────────────── */      #spokn-engine-error-banner {
         position: absolute;
         bottom: calc(100% + 10px);
         left: 50%;

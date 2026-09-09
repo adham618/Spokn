@@ -17,23 +17,20 @@ export class Highlighter {
   private words: WordNode[];
   private currentWordIdx = -1;
   private currentSentenceIdx = -1;
+  private autoScroll: boolean;
 
   // Suppress auto-scroll for a few seconds after the user manually scrolls.
-  // We use a flag + timestamp to distinguish user-initiated scrolls from the
-  // programmatic scrollIntoView calls we make ourselves.
   private userScrolledAt = 0;
   private readonly USER_SCROLL_SUPPRESS_MS = 3000;
-  // Set to true while we are programmatically scrolling so the scroll listener
-  // doesn't mistake our own scroll for a user scroll.
   private isProgrammaticScroll = false;
   private scrollListener: (() => void) | null = null;
 
-  constructor(words: WordNode[]) {
+  constructor(words: WordNode[], autoScroll = true) {
     this.words = words;
+    this.autoScroll = autoScroll;
     this.scrollListener = () => {
       if (this.isProgrammaticScroll) return;
-      this.userScrolledAt = Date.now();
-    };
+      this.userScrolledAt = Date.now();    };
     window.addEventListener('scroll', this.scrollListener, { passive: true, capture: true });
   }
 
@@ -118,7 +115,12 @@ export class Highlighter {
     return null;
   }
 
+  setAutoScroll(enabled: boolean): void {
+    this.autoScroll = enabled;
+  }
+
   private scrollIntoView(el: HTMLElement): void {
+    if (!this.autoScroll) return;
     try {
       const timeSinceUserScroll = Date.now() - this.userScrolledAt;
       if (timeSinceUserScroll < this.USER_SCROLL_SUPPRESS_MS) return;

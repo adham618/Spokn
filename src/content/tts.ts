@@ -144,6 +144,7 @@ export interface TTSOptions {
   rate: number;
   pitch: number;
   volume: number;
+  autoScroll?: boolean;
 }
 
 export class TTS {
@@ -224,6 +225,10 @@ export class TTS {
       this.resolvedVoice = voices.find(v => v.name === this.options.voiceName) ?? null;
       LOG('updateOptions — voiceName:', this.options.voiceName, '| resolved:', this.resolvedVoice?.name ?? '(not found, will use browser default)');
     }
+    // Propagate autoScroll to live highlighter so toggling takes effect immediately
+    if (opts.autoScroll !== undefined && this.highlighter) {
+      this.highlighter.setAutoScroll(opts.autoScroll);
+    }
   }
 
   updateOptionsAndRestart(opts: Partial<TTSOptions>): void {
@@ -276,7 +281,7 @@ export class TTS {
       };
     }
 
-    this.highlighter = new Highlighter(words);
+    this.highlighter = new Highlighter(words, this.options.autoScroll !== false);
     this.isPaused = false;
     this.isStopped = false;
     this.emit({ type: 'start' });

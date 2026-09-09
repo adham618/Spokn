@@ -13,6 +13,11 @@ export interface PlaybackState {
   wordIndex: number;
   totalWords: number;
   currentSentence: string;
+  // Feature: auto-scroll
+  autoScroll: boolean;
+  // Feature: sleep timer (minutes, 0 = off)
+  sleepTimerMinutes: number;
+  sleepTimerEndsAt: number; // epoch ms, 0 = not running
 }
 
 export interface SpoknSettings {
@@ -44,4 +49,7 @@ export const DEFAULT_STATE: PlaybackState = {
   wordIndex: 0,
   totalWords: 0,
   currentSentence: '',
+  autoScroll: true,
+  sleepTimerMinutes: 0,
+  sleepTimerEndsAt: 0,
 };

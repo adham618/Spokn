@@ -1,6 +1,6 @@
 {
   "name": "spokn",
-  "version": "1.0.4",
+  "version": "2.0.0",
   "description": "Offline text-to-speech Chrome extension with word-by-word highlighting",
   "private": true,
   "type": "module",
@@ -18,5 +18,8 @@
     "typescript": "^5.5.4",
     "vite": "^5.4.0",
     "vite-plugin-web-extension": "^4.1.1"
+  },
+  "dependencies": {
+    "pdfjs-dist": "4.4.168"
   }
 }

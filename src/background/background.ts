@@ -108,6 +108,11 @@ chrome.runtime.onMessage.addListener(
           sendResponse({ success: true } satisfies MessageResponse);
           return;
 
+        case 'OPEN_READER_PAGE':
+          chrome.tabs.create({ url: chrome.runtime.getURL('src/reader/reader.html') });
+          sendResponse({ success: true } satisfies MessageResponse);
+          return;
+
         case 'PLAY':
           activeTabId = tabId;
           sendResponse(await sendToTab(tabId, msg));

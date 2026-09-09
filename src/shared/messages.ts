@@ -19,7 +19,17 @@ export type Message =
   | { type: 'TOGGLE_TOOLBAR' }
   | { type: 'READ_SELECTION'; selectionText?: string }
   | { type: 'OPEN_SHORTCUTS_PAGE' }
-  | { type: 'OPEN_TOOLBAR' };
+  | { type: 'OPEN_TOOLBAR' }
+  // Feature: skip/rewind sentence
+  | { type: 'SKIP_SENTENCE'; direction: 'next' | 'prev' }
+  // Feature: auto-scroll toggle
+  | { type: 'SET_AUTO_SCROLL'; enabled: boolean }
+  // Feature: sleep timer
+  | { type: 'SET_SLEEP_TIMER'; minutes: number }
+  // Feature: per-site settings
+  | { type: 'SET_SITE_SETTINGS'; domain: string; voiceName: string; rate: number }
+  // Feature: open reader page
+  | { type: 'OPEN_READER_PAGE' };
 
 export type MessageResponse =
   | { success: true; state?: PlaybackState; visible?: boolean }

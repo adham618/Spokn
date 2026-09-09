@@ -10,7 +10,7 @@ export default defineConfig({
       manifest: () => ({
         manifest_version: 3,
         name: 'Spokn — Offline Text to Speech',
-        version: '1.0.4',
+        version: '2.0.0',
         description: "Read any webpage aloud with word-by-word highlighting. 100% offline, no accounts, no API keys. Uses your device's built-in voices.",
         icons: {
           '16': 'icons/icon16.png',
@@ -44,7 +44,7 @@ export default defineConfig({
         host_permissions: ['<all_urls>', 'file:///*'],
         web_accessible_resources: [
           {
-            resources: ['kofi.png'],
+            resources: ['kofi.png', 'src/reader/reader.html'],
             matches: ['<all_urls>'],
           },
         ],
@@ -66,6 +66,7 @@ export default defineConfig({
       disableAutoLaunch: true,
       printSummary: true,
       skipManifestValidation: true,
+      additionalInputs: ['src/reader/reader.html'],
       // Use relative base for popup HTML so asset paths resolve in extension context
       htmlViteConfig: {
         base: './',
@@ -78,5 +79,8 @@ export default defineConfig({
     target: 'es2022',
     minify: false,
     sourcemap: false,
+    rollupOptions: {
+      external: ['fs', 'path', 'url', 'stream', 'util', 'buffer', 'crypto', 'os', 'events', 'assert', 'http', 'https', 'zlib'],
+    },
   },
 });
