@@ -108,7 +108,7 @@ const persistText = debounce((text: string) => {
 
 const persistWordIndex = debounce((idx: number) => {
   saveStoredSettings({ wordIndex: idx });
-}, 1500);
+}, 500);
 
 // ─── Build words ─────────────────────────────────────────────────────────────
 
@@ -272,7 +272,7 @@ function updateSleepBadge(ms: number): void {
 
 // ─── Playback ─────────────────────────────────────────────────────────────────
 
-function stopAll(): void {
+function stopAll(clearPosition = false): void {
   speechSynthesis.cancel();
   utterances = [];
   currentUtteranceIdx = 0;
@@ -283,7 +283,7 @@ function stopAll(): void {
   exitReadingMode();
   updateButtons();
   updateProgress();
-  saveStoredSettings({ wordIndex: 0 });
+  if (clearPosition) saveStoredSettings({ wordIndex: 0 });
 }
 
 function playFrom(startIdx: number): void {
@@ -321,10 +321,11 @@ function playFrom(startIdx: number): void {
       wordIndex = offset + matched;
       highlightWord(wordIndex);
       updateProgress();
+      persistWordIndex(wordIndex);
     };
     utt.onend = () => {
       currentUtteranceIdx++;
-      if (currentUtteranceIdx >= utterances.length) stopAll();
+      if (currentUtteranceIdx >= utterances.length) stopAll(true); // finished naturally — clear saved position
     };
     utt.onerror = (e) => {
       if (e.error === 'interrupted' || e.error === 'canceled') return;
@@ -442,7 +443,6 @@ function updateProgress(): void {
   bar.style.width = `${pct}%`;
   label.textContent = words.length > 0 ? `${wordIndex} / ${words.length} words` : '';
   updateTimeRemaining();
-  if (isPlaying && wordIndex > 0) persistWordIndex(wordIndex);
 }
 
 function updateTimeRemaining(): void {
@@ -740,7 +740,7 @@ async function resetAllSettings(): Promise<void> {
   fullText = '';
   words    = [];
   wordIndex = 0;
-  stopAll();
+  stopAll(true);
   const ta = $<HTMLTextAreaElement>('#text-input');
   if (ta) ta.value = '';
   updateButtons();
@@ -983,7 +983,7 @@ function attachListeners(): void {
   });
   $<HTMLButtonElement>('#btn-skip-prev').addEventListener('click', () => skipSentence('prev'));
   $<HTMLButtonElement>('#btn-skip-next').addEventListener('click', () => skipSentence('next'));
-  $<HTMLButtonElement>('#btn-clear').addEventListener('click', () => { stopAll(); loadText(''); });
+  $<HTMLButtonElement>('#btn-clear').addEventListener('click', () => { stopAll(true); loadText(''); });
   $<HTMLButtonElement>('#btn-load-pdf').addEventListener('click', () => $<HTMLInputElement>('#file-input').click());
 
   // Edit button — switch back to textarea from reading mode
