@@ -48,10 +48,6 @@ export default defineConfig({
             matches: ['<all_urls>'],
           },
         ],
-        content_security_policy: {
-          // Extension pages (reader) can load pdfjs from CDN
-          extension_pages: "script-src 'self' https://cdn.jsdelivr.net; object-src 'self'",
-        },
         commands: {
           'toggle-play': {
             suggested_key: { default: 'Alt+Shift+K', mac: 'Command+Shift+K' },

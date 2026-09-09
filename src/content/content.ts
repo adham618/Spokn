@@ -853,6 +853,102 @@ async function resetAllSettings(): Promise<void> {
   applyTheme(DEFAULT_THEME_ID);
 }
 
+// ─── Keyboard shortcuts ───────────────────────────────────────────────────────
+
+document.addEventListener('keydown', (e: KeyboardEvent) => {
+  // Only fire when toolbar is visible and playing or paused
+  if (!toolbar?.isVisible()) return;
+  if (state.status !== 'playing' && state.status !== 'paused') return;
+  // Don't fire when typing in an input/textarea
+  const tag = (e.target as HTMLElement).tagName;
+  if (tag === 'INPUT' || tag === 'TEXTAREA' || (e.target as HTMLElement).isContentEditable) return;
+  // Don't fire if a modifier key is held (avoid conflicting with browser shortcuts)
+  if (e.metaKey || e.ctrlKey || e.altKey) return;
+
+  switch (e.key) {
+    case 'ArrowRight':
+      e.preventDefault();
+      skipSentence('next');
+      break;
+    case 'ArrowLeft':
+      e.preventDefault();
+      skipSentence('prev');
+      break;
+    case 'ArrowDown':
+      e.preventDefault();
+      skipParagraph('next');
+      break;
+    case 'ArrowUp':
+      e.preventDefault();
+      skipParagraph('prev');
+      break;
+  }
+}, { capture: false });
+
+// ─── Skip paragraph (↑↓) — jumps to DOM block element boundaries ─────────────
+
+function skipParagraph(direction: 'next' | 'prev'): void {
+  if (!walkResult || walkResult.words.length === 0) return;
+
+  const currentWordIdx = state.wordIndex;
+  const currentWord    = walkResult.words[currentWordIdx];
+  if (!currentWord) return;
+
+  // Get the block-level ancestor of a word span
+  const BLOCK_TAGS = new Set(['P','H1','H2','H3','H4','H5','H6','LI','BLOCKQUOTE','TD','TH','DT','DD','ARTICLE','SECTION','FIGCAPTION']);
+  function getBlock(span: HTMLSpanElement): Element | null {
+    let el: Element | null = span;
+    while (el) {
+      if (BLOCK_TAGS.has(el.tagName)) return el;
+      el = el.parentElement;
+    }
+    return span.parentElement;
+  }
+
+  const currentBlock = getBlock(currentWord.span);
+  let targetWordIdx  = -1;
+
+  if (direction === 'next') {
+    // Find first word that belongs to a different block after current position
+    for (let i = currentWordIdx + 1; i < walkResult.words.length; i++) {
+      const block = getBlock(walkResult.words[i]!.span);
+      if (block !== currentBlock) {
+        targetWordIdx = i;
+        break;
+      }
+    }
+  } else {
+    // Find the start of the previous block
+    // First find any word before us that's in a different block
+    let prevBlock: Element | null = null;
+    for (let i = currentWordIdx - 1; i >= 0; i--) {
+      const block = getBlock(walkResult.words[i]!.span);
+      if (block !== currentBlock) {
+        prevBlock = block;
+        // Now find the FIRST word of that block
+        for (let j = i; j >= 0; j--) {
+          if (getBlock(walkResult.words[j]!.span) !== prevBlock) {
+            targetWordIdx = j + 1;
+            break;
+          }
+          if (j === 0) targetWordIdx = 0;
+        }
+        break;
+      }
+    }
+    // If we found no different block, go to start
+    if (targetWordIdx < 0) targetWordIdx = 0;
+  }
+
+  if (targetWordIdx < 0) return;
+
+  LOG('skipParagraph', direction, '→ word', targetWordIdx);
+  const wasActive = state.status === 'playing' || state.status === 'paused';
+  if (tts) { tts.stop(); tts = null; }
+  if (wasActive) startReading(state.mode === 'selection' ? 'selection' : 'page', undefined, targetWordIdx)
+    .catch(e => ERR('skipParagraph threw:', e));
+}
+
 // ─── Message listener ─────────────────────────────────────────────────────────
 
 chrome.runtime.onMessage.addListener(

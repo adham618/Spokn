@@ -2,7 +2,7 @@
  * reader.ts — Spokn Reader page
  *
  * Lets the user paste text or load a PDF and have it read aloud.
- * PDF parsing uses pdfjs-dist loaded lazily from CDN — only when a PDF is opened.
+ * PDF parsing uses pdfjs-dist bundled locally — only loaded when reader page is opened.
  * Settings are stored separately in chrome.storage.local under 'readerSettings'.
  */
 
@@ -374,6 +374,37 @@ function skipSentence(dir: 'prev' | 'next'): void {
   if (wasActive) playFrom(target);
 }
 
+function skipParagraph(dir: 'prev' | 'next'): void {
+  if (words.length === 0) return;
+  // Find paragraph boundaries by looking for double newlines in the original text
+  const paragraphStarts: number[] = [0];
+  const re = /\n\s*\n/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(fullText)) !== null) {
+    // Find the first word at or after this paragraph break
+    const breakPos = m.index + m[0].length;
+    const idx = words.findIndex(w => w.charStart >= breakPos);
+    if (idx > 0) paragraphStarts.push(idx);
+  }
+
+  let target: number;
+  if (dir === 'next') {
+    // Find the first paragraph start that is strictly after current word
+    const next = paragraphStarts.find(s => s > wordIndex);
+    target = next !== undefined ? next : words.length - 1;
+  } else {
+    // Find the last paragraph start that is strictly before current word
+    // If we're near the start of a paragraph (within 3 words), go to the previous one
+    const prevStarts = paragraphStarts.filter(s => s < wordIndex - 3);
+    target = prevStarts.length > 0 ? prevStarts[prevStarts.length - 1]! : 0;
+  }
+
+  const wasActive = isPlaying || isPaused;
+  stopAll();
+  wordIndex = target;
+  if (wasActive) playFrom(target);
+}
+
 // ─── Icons ────────────────────────────────────────────────────────────────────
 
 const ICON_PLAY  = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="8 4.5 11.75 15" aria-hidden="true" style="transform:translateX(2px)"><path d="M8 5.5v13a1 1 0 0 0 1.53.85l9.75-6.5a1 1 0 0 0 0-1.7l-9.75-6.5A1 1 0 0 0 8 5.5Z"/></svg>`;
@@ -456,17 +487,18 @@ function loadText(text: string, append = false): void {
 
 // ─── PDF loading ──────────────────────────────────────────────────────────────
 
-// ─── PDF loading — lazy CDN ───────────────────────────────────────────────────
-
-const PDFJS_CDN    = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@4.4.168/build/pdf.min.mjs';
-const PDFJS_WORKER = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@4.4.168/build/pdf.worker.min.mjs';
+// ─── PDF loading — lazy local import ─────────────────────────────────────────
+// pdfjs is dynamically imported so it's only loaded when a PDF is actually opened.
 
 let pdfjsLib: any = null;
 
 async function loadPdfJs(): Promise<any> {
   if (pdfjsLib) return pdfjsLib;
-  const mod = await import(/* @vite-ignore */ PDFJS_CDN);
-  mod.GlobalWorkerOptions.workerSrc = PDFJS_WORKER;
+  const [mod, workerUrl] = await Promise.all([
+    import('pdfjs-dist'),
+    import('pdfjs-dist/build/pdf.worker.min.mjs?url'),
+  ]);
+  mod.GlobalWorkerOptions.workerSrc = (workerUrl as any).default;
   pdfjsLib = mod;
   return mod;
 }
@@ -1061,22 +1093,12 @@ function attachListeners(): void {
         break;
       case 'ArrowDown': {
         e.preventDefault();
-        // Skip forward ~30 words (paragraph proxy)
-        const target = Math.min(words.length - 1, wordIndex + 30);
-        const wasActive = isPlaying || isPaused;
-        stopAll();
-        wordIndex = target;
-        if (wasActive) playFrom(target);
+        skipParagraph('next');
         break;
       }
       case 'ArrowUp': {
         e.preventDefault();
-        // Skip back ~30 words
-        const target = Math.max(0, wordIndex - 30);
-        const wasActive = isPlaying || isPaused;
-        stopAll();
-        wordIndex = target;
-        if (wasActive) playFrom(target);
+        skipParagraph('prev');
         break;
       }
     }
