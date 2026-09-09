@@ -74,6 +74,26 @@ let isPaused   = false;
 let allVoices: SpeechSynthesisVoice[] = [];
 let favoriteVoices: string[] = [];
 let selectedVoice = '';
+
+// ─── Tip jar ─────────────────────────────────────────────────────────────────
+const TIP_WORDS_THRESHOLD = 3000;  // words read in a session before showing
+let   wordsReadInSession  = 0;
+let   tipBannerShown      = false; // only once per session
+
+async function shouldShowTip(): Promise<boolean> {
+  if (tipBannerShown) return false;
+  try {
+    const res = await chrome.storage.local.get('spokn_last_tip');
+    const last: number = res.spokn_last_tip ?? 0;
+    const sixHoursMs = 6 * 60 * 60 * 1000;
+    return Date.now() - last > sixHoursMs;
+  } catch { return true; }
+}
+
+async function markTipShown(): Promise<void> {
+  tipBannerShown = true;
+  try { await chrome.storage.local.set({ spokn_last_tip: Date.now() }); } catch {}
+}
 let activeVoiceTab: 'all' | 'favs' = 'all';
 const langNames = new Intl.DisplayNames([navigator.language, 'en'], { type: 'language' });
 
@@ -322,6 +342,11 @@ function playFrom(startIdx: number): void {
       highlightWord(wordIndex);
       updateProgress();
       persistWordIndex(wordIndex);
+      // Tip jar — count words read this session
+      wordsReadInSession++;
+      if (wordsReadInSession >= TIP_WORDS_THRESHOLD) {
+        shouldShowTip().then(show => { if (show) { markTipShown(); showTipBanner(); } });
+      }
     };
     utt.onend = () => {
       currentUtteranceIdx++;
@@ -801,6 +826,44 @@ function showResumeBanner(idx: number, total: number): void {
   document.getElementById('resume-btn-dismiss')?.addEventListener('click', dismiss);
 }
 
+const KOFI_URL = import.meta.env.VITE_KOFI_URL as string ?? 'https://ko-fi.com/adham_tarek';
+
+function showTipBanner(): void {
+  if (document.getElementById('tip-banner')) return;
+
+  const banner = document.createElement('div');
+  banner.id = 'tip-banner';
+  banner.innerHTML = `
+    <div class="tip-banner-inner">
+      <div class="tip-banner-body">
+        <img src="${chrome.runtime.getURL('kofi.png')}" alt="" width="22" height="22" class="tip-banner-kofi-icon" />
+        <div class="tip-banner-copy">
+          <strong>Enjoying Spokn?</strong>
+          <span>You've read over 3,000 words — a small tip keeps development going.</span>
+        </div>
+      </div>
+      <div class="tip-banner-actions">
+        <a href="${KOFI_URL}" target="_blank" rel="noopener noreferrer" class="tip-kofi-btn">
+          <img src="${chrome.runtime.getURL('kofi.png')}" alt="" class="tip-kofi-logo" />
+          Support on Ko-fi
+        </a>
+        <button id="tip-btn-dismiss" class="tip-dismiss-btn" aria-label="Dismiss">Maybe later</button>
+      </div>
+    </div>
+  `;
+
+  document.body.appendChild(banner);
+  requestAnimationFrame(() => banner.classList.add('tip-banner-visible'));
+
+  const dismiss = () => {
+    banner.classList.remove('tip-banner-visible');
+    setTimeout(() => banner.remove(), 280);
+  };
+
+  document.getElementById('tip-btn-dismiss')?.addEventListener('click', dismiss);
+  setTimeout(dismiss, 20000);
+}
+
 // ─── Build UI ─────────────────────────────────────────────────────────────────
 
 const SPEED_PRESETS = [0.5, 0.8, 1.0, 1.5, 2.0, 2.5, 3.0];
@@ -813,6 +876,10 @@ function buildUI(): void {
           <img src="${chrome.runtime.getURL('icons/icon48.png')}" alt="Spokn" width="28" height="28" />
           <span>Spokn <span class="reader-subtitle">Reader</span></span>
         </div>
+        <a href="${KOFI_URL}" target="_blank" rel="noopener noreferrer" class="header-kofi-btn" title="Support Spokn on Ko-fi">
+          <img src="${chrome.runtime.getURL('kofi.png')}" alt="" class="header-kofi-logo" />
+          Support me on Ko-fi
+        </a>
         <a href="#" id="reader-back-link" class="back-link">← Back to browsing</a>
       </header>
 
@@ -1181,6 +1248,10 @@ function injectStyles(): void {
     .reader-subtitle{color:#0277D4;}
     .back-link{font-size:12px;color:rgba(255,255,255,0.4);text-decoration:none;transition:color .15s;}
     .back-link:hover{color:rgba(255,255,255,0.75);}
+    .header-kofi-btn{display:inline-flex;align-items:center;gap:6px;font-size:13px;font-weight:700;color:#202020;text-decoration:none;padding:7px 16px;border-radius:12px;background:#72A4F2;transition:filter .15s,transform .1s;letter-spacing:.01em;}
+    .header-kofi-btn:hover{filter:brightness(1.12);transform:translateY(-1px);}
+    .header-kofi-btn:active{transform:translateY(0);filter:brightness(0.95);}
+    .header-kofi-logo{width:24px;height:24px;object-fit:contain;flex-shrink:0;}
 
     /* Layout */
     .reader-main{display:grid;grid-template-columns:1fr 320px;gap:24px;flex:1;}
@@ -1391,7 +1462,7 @@ function injectStyles(): void {
     #reader-toast.toast-visible{opacity:1;transform:translateX(-50%) translateY(0);}
 
     /* Resume banner */
-    #resume-banner{display:flex;align-items:center;gap:10px;padding:10px 14px;background:rgba(2,119,212,0.1);border:1px solid rgba(2,119,212,0.3);border-radius:10px;opacity:0;transform:translateY(-6px);transition:opacity .22s,transform .22s;position:relative;}
+    #resume-banner{display:flex;align-items:center;gap:10px;padding:10px 30px 10px 14px;background:rgba(2,119,212,0.1);border:1px solid rgba(2,119,212,0.3);border-radius:10px;opacity:0;transform:translateY(-6px);transition:opacity .22s,transform .22s;position:relative;}
     #resume-banner.resume-banner-visible{opacity:1;transform:translateY(0);}
     .resume-banner-text{font-size:12px;color:rgba(255,255,255,0.6);flex:1;line-height:1.4;}
     .resume-banner-text strong{color:#e8edf5;font-weight:600;}
@@ -1401,8 +1472,25 @@ function injectStyles(): void {
     .resume-btn-primary:hover{filter:brightness(1.15);}
     .resume-btn-ghost{background:transparent;border:1px solid rgba(255,255,255,0.15);color:rgba(255,255,255,0.5);}
     .resume-btn-ghost:hover{border-color:rgba(255,255,255,0.35);color:rgba(255,255,255,0.85);}
-    .resume-dismiss{all:unset;position:absolute;top:6px;right:8px;font-size:10px;color:rgba(255,255,255,0.25);cursor:pointer;line-height:1;padding:2px 3px;border-radius:3px;transition:color .12s;}
+    .resume-dismiss{all:unset;position:absolute;top:4px;right:8px;font-size:10px;color:rgba(255,255,255,0.25);cursor:pointer;line-height:1;padding:2px 3px;border-radius:3px;transition:color .12s;}
     .resume-dismiss:hover{color:rgba(255,255,255,0.6);}
+
+    /* Tip jar banner — fixed top-center overlay */
+    #tip-banner{position:fixed;top:20px;left:50%;transform:translateX(-50%) translateY(-12px);z-index:99999;opacity:0;transition:opacity .28s,transform .28s;pointer-events:none;min-width:360px;max-width:480px;width:max-content;}
+    #tip-banner.tip-banner-visible{opacity:1;transform:translateX(-50%) translateY(0);pointer-events:auto;}
+    .tip-banner-inner{background:#1b1c1f;border:1px solid rgba(255,255,255,0.1);border-radius:14px;box-shadow:0 8px 32px rgba(0,0,0,0.5);padding:14px 16px;display:flex;flex-direction:column;gap:12px;}
+    .tip-banner-body{display:flex;align-items:center;gap:12px;}
+    .tip-banner-kofi-icon{flex-shrink:0;object-fit:contain;}
+    .tip-banner-copy{display:flex;flex-direction:column;gap:2px;}
+    .tip-banner-copy strong{font-size:13px;font-weight:700;color:#e8edf5;}
+    .tip-banner-copy span{font-size:12px;color:rgba(255,255,255,0.5);line-height:1.4;}
+    .tip-banner-actions{display:flex;align-items:center;gap:8px;}
+    .tip-kofi-btn{display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:700;color:#202020;text-decoration:none;padding:7px 16px;border-radius:10px;background:#72A4F2;border:none;transition:filter .15s,transform .1s;letter-spacing:.01em;font-family:inherit;flex:1;justify-content:center;}
+    .tip-kofi-btn:hover{filter:brightness(1.12);transform:translateY(-1px);}
+    .tip-kofi-btn:active{transform:translateY(0);filter:brightness(0.95);}
+    .tip-kofi-logo{width:22px;height:22px;object-fit:contain;flex-shrink:0;}
+    .tip-dismiss-btn{all:unset;font-size:11px;color:rgba(255,255,255,0.3);cursor:pointer;padding:7px 10px;border-radius:8px;border:1px solid rgba(255,255,255,0.1);font-family:inherit;white-space:nowrap;transition:color .12s,border-color .12s;}
+    .tip-dismiss-btn:hover{color:rgba(255,255,255,0.6);border-color:rgba(255,255,255,0.25);}
   `;
   document.head.appendChild(style);
 }
