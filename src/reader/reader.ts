@@ -2,14 +2,9 @@
  * reader.ts — Spokn Reader page
  *
  * Lets the user paste text or load a PDF and have it read aloud.
- * PDF parsing uses pdfjs-dist bundled locally — no CDN, no internet required.
+ * PDF parsing uses pdfjs-dist loaded lazily from CDN — only when a PDF is opened.
  * Settings are stored separately in chrome.storage.local under 'readerSettings'.
  */
-
-import * as pdfjs from 'pdfjs-dist';
-// @ts-ignore — Vite ?url import for the worker
-import PDFWorkerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
-pdfjs.GlobalWorkerOptions.workerSrc = PDFWorkerUrl as string;
 
 import { HIGHLIGHT_THEMES } from '../content/highlightTheme.js';
 
@@ -461,15 +456,32 @@ function loadText(text: string, append = false): void {
 
 // ─── PDF loading ──────────────────────────────────────────────────────────────
 
+// ─── PDF loading — lazy CDN ───────────────────────────────────────────────────
+
+const PDFJS_CDN    = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@4.4.168/build/pdf.min.mjs';
+const PDFJS_WORKER = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@4.4.168/build/pdf.worker.min.mjs';
+
+let pdfjsLib: any = null;
+
+async function loadPdfJs(): Promise<any> {
+  if (pdfjsLib) return pdfjsLib;
+  const mod = await import(/* @vite-ignore */ PDFJS_CDN);
+  mod.GlobalWorkerOptions.workerSrc = PDFJS_WORKER;
+  pdfjsLib = mod;
+  return mod;
+}
+
 async function extractTextFromPDF(file: File): Promise<string> {
+  setStatus('Loading PDF library…', 'info');
+  const lib = await loadPdfJs();
   setStatus('Parsing PDF…', 'info');
   const buf = await file.arrayBuffer();
-  const pdf = await pdfjs.getDocument({ data: buf }).promise;
+  const pdf = await lib.getDocument({ data: buf }).promise;
   const pages: string[] = [];
   for (let i = 1; i <= pdf.numPages; i++) {
-    const page = await pdf.getPage(i);
+    const page    = await pdf.getPage(i);
     const content = await page.getTextContent();
-    pages.push((content.items as any[]).filter(x => typeof x.str === 'string').map(x => x.str).join(' '));
+    pages.push((content.items as any[]).filter(x => typeof x.str === 'string').map((x: any) => x.str).join(' '));
     setStatus(`Parsing page ${i} / ${pdf.numPages}…`, 'info');
   }
   return pages.join('\n\n');

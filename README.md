@@ -9,13 +9,19 @@ Offline text-to-speech Chrome extension with word-by-word highlighting. Reads an
 ## Features
 
 - **Word-by-word highlighting** — each word is highlighted precisely as it's spoken, Speechify-style
-- **Hover highlight** — hover any word while the toolbar is open to highlight it
 - **Three reading modes** — Full Page, Selected Text, or click any paragraph to start from there
-- **Floating toolbar** — draggable vertical panel on the right side of the page with play/pause/stop and settings
-- **Highlight themes** — 9 color themes (yellow, sky, mint, coral, violet, warm, rose, dark, light)
-- **Voice picker** — all system voices grouped by language
-- **Speed, pitch, volume** — fully adjustable and persisted across sessions
-- **Keyboard shortcuts** — play/pause, stop, and read selection without touching the mouse
+- **Skip sentences** — ⏮ ⏭ buttons in the toolbar to jump forward or back by sentence
+- **Reading position memory** — resumes from where you left off on any page
+- **Auto-scroll** — page scrolls to keep the current sentence in view (toggleable)
+- **Sleep timer** — automatically stops reading after 5 / 10 / 15 / 30 / 60 minutes, with live mm:ss countdown
+- **Per-site settings** — save voice, speed, and auto-scroll preference per domain
+- **Reader page** — dedicated page to paste text or load a PDF and have it read aloud
+- **Floating toolbar** — draggable vertical pill on the right side of the page, expandable for extra controls
+- **9 highlight themes** — Yellow, Sky, Mint, Coral, Violet, Warm, Rose, Dark, Light
+- **Voice picker** — tabbed All/Favorites picker, grouped by language, with search and star/pin
+- **Speed presets** — 0.5× / 0.8× / 1× / 1.5× / 2× / 2.5× / 3× quick-select buttons
+- **Speed, pitch, volume** — fully adjustable with +/− buttons and persisted across sessions
+- **Keyboard shortcuts** — play/pause, stop, read selection without touching the mouse
 - **100% offline** — uses only `window.speechSynthesis` with local system voices
 - **No ads, no tracking, no accounts**
 
@@ -29,12 +35,13 @@ Offline text-to-speech Chrome extension with word-by-word highlighting. Reads an
 
 ## Tech Stack
 
-- **Popup UI** — Svelte 5 + Vite
-- **Content script** — Vanilla TypeScript
+- **Content script UI** — Vanilla TypeScript + Shadow DOM (floating toolbar)
+- **Reader page** — Vanilla TypeScript
 - **Build tool** — Vite + `vite-plugin-web-extension`
 - **Manifest** — Chrome Manifest V3
-- **Storage** — `chrome.storage.sync`
+- **Storage** — `chrome.storage.sync` (extension settings) + `chrome.storage.local` (reader settings + position memory)
 - **TTS** — `window.speechSynthesis` (local voices only)
+- **PDF parsing** — pdfjs-dist loaded lazily from CDN (only when a PDF is opened in the Reader)
 
 ## Project Structure
 
@@ -44,16 +51,6 @@ spokn/
 │   ├── icons/                 # Extension icons (16, 32, 48, 128px)
 │   └── kofi.png               # Ko-fi button image
 ├── src/
-│   ├── popup/                 # Svelte popup UI (unused in favour of floating toolbar)
-│   │   ├── Popup.svelte
-│   │   ├── popup.html
-│   │   ├── popup.ts
-│   │   └── components/
-│   │       ├── PitchSlider.svelte
-│   │       ├── PlaybackControls.svelte
-│   │       ├── SpeedSlider.svelte
-│   │       ├── VoicePicker.svelte
-│   │       └── VolumeSlider.svelte
 │   ├── content/               # Injected content script
 │   │   ├── content.ts         # Entry point & orchestration
 │   │   ├── tts.ts             # SpeechSynthesis wrapper (chunk/watchdog fixes)
@@ -62,6 +59,9 @@ spokn/
 │   │   ├── floatingToolbar.ts # Draggable Shadow DOM toolbar
 │   │   ├── highlightTheme.ts  # Theme CSS variable injector
 │   │   └── content.css        # Highlight & hover styles
+│   ├── reader/                # Standalone reader page
+│   │   ├── reader.html
+│   │   └── reader.ts          # Paste text / load PDF + full playback UI
 │   ├── background/
 │   │   └── background.ts      # Service worker & message relay
 │   └── shared/
@@ -100,7 +100,7 @@ Chrome's `speechSynthesis` has several known bugs that Spokn handles:
 
 ## Privacy Policy
 
-Spokn collects no data. No analytics, no tracking, no network requests. Full details at [spokn-privacy.pages.dev](https://spokn-privacy.pages.dev/).
+Spokn collects no data. No analytics, no tracking, no network requests (except optional CDN load of pdfjs when you open a PDF in the Reader). Full details at [spokn-privacy.pages.dev](https://spokn-privacy.pages.dev/).
 
 ## Contributing
 

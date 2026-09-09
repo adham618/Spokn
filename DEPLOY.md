@@ -21,7 +21,7 @@ npm run build
 The `dist/` folder is what you submit. Zip it:
 ```bash
 cd /Users/adhamtarek/Downloads/Spokn
-zip -r spokn-v1.0.0.zip dist/
+zip -r Spokn-v2.0.0.zip dist/ --exclude "*/.DS_Store"
 ```
 
 ### 2. Store listing assets
@@ -36,15 +36,15 @@ Chrome Web Store requires these images — all must be exact sizes:
 | Marquee promo tile | 1400×560 PNG | Recommended (featured placement) |
 | Screenshots | 1280×800 or 640×400 PNG/JPG | At least 1, up to 5 |
 
-See `STORE_IMAGES.md` for AI prompts to generate each one.
+See `STORE_IMAGES/STORE_IMAGES.md` for AI prompts to generate each one.
 
 ### 3. Store listing copy
 
-**Name:** Spokn — Text to Speech Reader
+**Name:** Spokn — Offline Text to Speech
 
 **Short description (132 chars max):**
 ```
-Read any webpage aloud with word-by-word highlighting. Offline, private, no accounts. Uses your device's built-in voices.
+Read any webpage aloud with word-by-word highlighting. Skip sentences, sleep timer, per-site settings. 100% offline, no accounts.
 ```
 
 **Detailed description:**
@@ -53,14 +53,14 @@ Read any webpage aloud with word-by-word highlighting. Offline, private, no acco
 
 Spokn is a free, fully offline text-to-speech extension that reads any webpage aloud while highlighting each word as it is spoken — exactly like Speechify, but private, free, and using only your device's built-in voices.
 
-**No cloud. No accounts. No internet required for reading. No data collection.**
+**No cloud. No accounts. No internet required. No data collection.**
 
 ---
 
 ### How it works
 
 1. Click the Spokn icon in your toolbar
-2. The floating toolbar appears on the right side of the page
+2. A floating vertical toolbar appears on the right side of the page
 3. Click Play — Spokn reads the entire page from the top
 4. Or click any paragraph to start reading from that point
 5. Or select text, right-click, and choose "Read selection with Spokn"
@@ -69,43 +69,53 @@ Spokn is a free, fully offline text-to-speech extension that reads any webpage a
 
 ### Features
 
-- **Word-by-word highlighting** — each word is highlighted as it is spoken, following your reading in real time
-- **Click any paragraph** to start reading from that point
-- **Right-click → Read selection** to read only the text you highlighted
-- **Floating toolbar** — draggable vertical panel on the right side of the page, stays out of your way
-- **9 highlight color themes** — Yellow, Sky, Mint, Coral, Violet, Warm, Rose, Dark, or Light
-- **Speed control** — 0.5× to 3.0× in the settings panel
-- **Pitch and volume control**
+**Reading**
+- **Word-by-word highlighting** — each word is highlighted precisely as it is spoken
+- **Three reading modes** — Full Page, Selected Text, or Click to start from any paragraph
+- **Skip sentences** — ⏮ ⏭ buttons to jump forward or back by sentence
+- **Click any word** — click any highlighted word in the reading view to jump to it
+- **Reading position memory** — automatically resumes from where you left off on any page
+- **Auto-scroll** — page scrolls smoothly to keep the current sentence in view (toggleable)
+
+**Controls**
+- **Sleep timer** — stops reading after 5 / 10 / 15 / 30 / 60 minutes, with live mm:ss countdown
+- **Per-site settings** — save your preferred voice, speed, and auto-scroll setting per domain
+- **Keyboard shortcuts** — play/pause, stop, read selection without touching the mouse
+
+**Reader Page**
+- **Paste text** — open the built-in Reader page and paste any text to have it read aloud
+- **Load a PDF** — drag and drop a PDF into the Reader page to extract and read its text
+- **Click words** — click any word in the reading view to start from that position
+
+**Voices & Audio**
 - **All system voices** — uses every voice installed on your device, grouped by language
-- **Works on any webpage** — articles, blogs, documentation, local HTML files, iframes
-- **Keyboard shortcuts** — Alt+Shift+K to play/pause, Alt+Shift+0 to stop, Alt+Shift+8 to read selection (Mac: ⌘+Shift+K / ⌘+Shift+0 / ⌘+Shift+8)
-- **Persistent settings** — your voice, speed, and theme are remembered across sessions
+- **Favorites** — star voices to pin them to a Favorites tab for quick access
+- **Speed presets** — 0.5× / 0.8× / 1× / 1.5× / 2× / 2.5× / 3× quick-select buttons
+- **Pitch and volume** — fully adjustable with +/− buttons
+
+**Appearance**
+- **9 highlight themes** — Yellow, Sky, Mint, Coral, Violet, Warm, Rose, Dark, Light
+- **Floating toolbar** — draggable vertical pill, compact by default, expands for extra controls
 
 ---
 
 ### Privacy
 
-Spokn does not collect any data. It does not make any network requests. All text-to-speech processing happens entirely on your device using your operating system's built-in speech engine. No text you read is ever sent anywhere.
+Spokn does not collect any data. It makes no network requests during normal use. All TTS processing happens entirely on your device. The Reader page optionally loads pdfjs from a CDN (cdn.jsdelivr.net) only when you open a PDF — nothing else is ever sent anywhere.
 
 ---
 
 ### How to add more voices
 
-Spokn uses the voices already installed on your operating system. To get more voices:
+Spokn uses the voices already installed on your OS. To get more voices:
 
-**Windows:**
-Settings → Time & Language → Speech → Manage voices → Add voices
-https://support.microsoft.com/en-us/windows/appendix-a-supported-languages-and-voices-4486e345-7730-53da-fcfe-55cc64300f01
+**Windows:** Settings → Time & Language → Speech → Manage voices → Add voices
 
-**macOS:**
-System Settings → Accessibility → Spoken Content → System Voice → Manage Voices
-https://support.apple.com/guide/mac-help/change-the-voice-your-mac-uses-to-speak-text-mchlp2290/mac
+**macOS:** System Settings → Accessibility → Spoken Content → System Voice → Manage Voices
 
-**ChromeOS:**
-Settings → Advanced → Accessibility → Text-to-Speech → Speech engines
-https://support.google.com/chromebook/answer/9032490
+**ChromeOS:** Settings → Advanced → Accessibility → Text-to-Speech → Speech engines
 
-After adding voices, restart Chrome and reopen the Spokn settings panel — new voices appear automatically in the Voice dropdown.
+After adding voices, restart Chrome and reopen the Spokn settings panel — new voices appear automatically.
 
 ---
 
@@ -121,18 +131,17 @@ After adding voices, restart Chrome and reopen the Spokn settings panel — new 
 
 ### Source code
 
-Spokn is open source (MIT license). You can inspect the full source code at:
+Spokn is open source (MIT license). Full source at:
 https://github.com/adham618/Spokn
 
 ---
 
 ### Support
 
-If you find Spokn useful, you can support development at:
-https://ko-fi.com/yourname
+If you find Spokn useful:
+https://ko-fi.com/adham_tarek
 
-**Version:** 1.0.1
-**License:** Free (open source, MIT)
+**Version:** 2.0.0 | **License:** Free, MIT
 
 ---
 
@@ -145,49 +154,49 @@ https://ko-fi.com/yourname
 
 ### Step 2 — Create a new item
 1. Click **Add new item**
-2. Upload `spokn-v1.0.0.zip`
+2. Upload `Spokn-v2.0.0.zip`
 3. Chrome will validate the manifest and show any errors
 
 ### Step 3 — Fill in store listing
 1. **Store listing** tab:
-   - Add the name, short description, and detailed description above
-   - Upload screenshots (at least 1)
-   - Upload promo tiles (440×280 required)
-   - Select category: **Tools** (under the Productivity section)
-   - Select language: English
+   - Name, short description, detailed description (above)
+   - Upload screenshots (at least 1 at 1280×800)
+   - Upload small promo tile (440×280, required)
+   - Category: **Tools** (under Productivity)
+   - Language: English
 
 2. **Privacy practices** tab:
-   - Data usage: select **No** for everything — Spokn collects nothing
-   - Single purpose description: "Reads webpage text aloud using the device's built-in text-to-speech voices"
+   - Data usage: **No** for everything — Spokn collects nothing
+   - Single purpose: "Reads webpage text aloud using the device's built-in text-to-speech voices, with word-by-word highlighting"
 
 3. **Pricing & distribution** tab:
    - Visibility: Public
-   - Regions: All regions (or restrict if needed)
+   - Regions: All regions
    - Price: Free
 
 ### Step 4 — Submit for review
-Click **Submit for review**. First-time submissions typically take **1–3 business days** for Google's review. Updates to existing extensions are usually reviewed within a few hours.
+Click **Submit for review**. First-time submissions take **1–3 business days**. Updates are usually reviewed within a few hours.
 
 ### Step 5 — After approval
-- Your extension gets a permanent Chrome Web Store URL
-- Share it and update the Ko-fi link in `.env` if needed
-- For updates: bump `version` in `manifest.json`, `package.json`, and `VITE_APP_VERSION` in `.env`, rebuild, re-zip, and upload the new zip
+- Share your Chrome Web Store URL
+- Update the Ko-fi link in `.env` if needed
+- For future updates: bump `version` in `package.json`, `vite.config.ts`, and `VITE_APP_VERSION` in `.env`, rebuild, re-zip, upload
 
 ---
 
-## Tech stack (for store listing / press kit)
+## Tech stack
 
 | Layer | Technology |
 |---|---|
-| UI framework | Svelte 5 |
 | Build tool | Vite 5 |
 | Language | TypeScript |
-| TTS engine | Web Speech API (window.speechSynthesis) |
-| Storage | chrome.storage.sync |
+| TTS engine | Web Speech API (`window.speechSynthesis`) |
+| Storage | `chrome.storage.sync` + `chrome.storage.local` |
 | Extension standard | Chrome Manifest V3 |
-| Styling | Scoped CSS (Svelte) + Shadow DOM (content script) |
-| External dependencies | None at runtime |
-| Bundle size | ~60KB JS + ~2KB CSS |
+| Styling | Shadow DOM (content script toolbar) |
+| PDF parsing | pdfjs-dist via CDN (lazy, only when Reader opens a PDF) |
+| External dependencies | None at runtime for normal use |
+| Zip size | ~72KB |
 
 ---
 
@@ -195,8 +204,9 @@ Click **Submit for review**. First-time submissions typically take **1–3 busin
 
 | Issue | How we handle it |
 |---|---|
-| Requesting unnecessary permissions | We only request `storage`, `activeTab`, `scripting`, `contextMenus` — all justified |
-| Vague single purpose | Clearly stated: "reads webpage text aloud" |
-| Missing privacy policy | Add one at submission if required — a simple "no data collected" page works |
-| Deceptive description | All claims in the description are accurate |
-| Obfuscated code | `minify: false` in vite.config.ts — our build is readable |
+| Requesting unnecessary permissions | Only `storage`, `activeTab`, `contextMenus` — all justified |
+| Vague single purpose | Clearly stated: "reads webpage text aloud with word-by-word highlighting" |
+| Missing privacy policy | Available at `/privacy-policy/index.html` |
+| Deceptive description | All claims are accurate and verifiable |
+| Obfuscated code | `minify: false` in `vite.config.ts` — build is fully readable |
+| Remote code execution | pdfjs CDN load is declared in `content_security_policy` in the manifest |
