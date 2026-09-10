@@ -148,26 +148,228 @@ function chunkWords(ws: TTSWord[]): TTSWord[][] {
   return chunks;
 }
 
-// ─── Reading mode ─────────────────────────────────────────────────────────────
+// ─── Virtual reading renderer ─────────────────────────────────────────────────
+//
+// For large documents (tens of thousands of words) putting every word into a
+// <span> causes catastrophic layout/paint costs.  Instead we:
+//   1. Split fullText into paragraphs once (vrParagraphs), storing the absolute
+//      char offset of each paragraph so word positions can be localised cheaply.
+//   2. Only the paragraph containing the active word, plus VRENDER_LOOKAHEAD
+//      paragraphs ahead / VRENDER_LOOKBEHIND behind, have word-<span>s in the
+//      DOM.  Everything else is plain text — no extra nodes, no listeners.
+//   3. On each word advance we check whether the active paragraph changed and
+//      swap spans in/out as needed (vrUpdateLiveRange).
+
+const VRENDER_LOOKAHEAD  = 3;  // paragraphs ahead of active to keep spanified
+const VRENDER_LOOKBEHIND = 2;  // paragraphs behind active to keep spanified
+
+interface VRParagraph {
+  /** Raw text of this paragraph. */
+  text: string;
+  /** Absolute char offset of this paragraph's start inside fullText. */
+  absStart: number;
+  /** Index into `words[]` of the first word in this paragraph (-1 if no words). */
+  firstWordIdx: number;
+  /** Index into `words[]` of the last word in this paragraph (-1 if no words). */
+  lastWordIdx: number;
+  /** The <div> element representing this paragraph in the DOM. */
+  el: HTMLDivElement | null;
+}
+
+let vrParagraphs: VRParagraph[] = [];
+let vrLiveParagraphs    = new Set<number>(); // spanified due to playback window
+let vrScrollLive        = new Set<number>(); // spanified due to scroll visibility
+let vrActiveParagraphIdx = -1;
+let vrObserver: IntersectionObserver | null = null;
+
+// How many extra paragraphs to pre-spanify around a visible one while scrolling
+const VRENDER_SCROLL_PAD = 2;
+
+/** Split fullText into paragraphs and map words to paragraphs. */
+function buildVRParagraphs(): void {
+  vrParagraphs = [];
+  vrLiveParagraphs.clear();
+  vrScrollLive.clear();
+  vrActiveParagraphIdx = -1;
+
+  // Split on two-or-more consecutive newlines.  We need to track the exact
+  // character position of each chunk so we can map absolute word.charStart
+  // positions back to paragraph-local positions.
+  const re = /\n{2,}/g;
+  let start = 0;
+  let match: RegExpExecArray | null;
+  const ranges: Array<{ start: number; end: number }> = [];
+  while ((match = re.exec(fullText)) !== null) {
+    ranges.push({ start, end: match.index });
+    start = match.index + match[0].length;
+  }
+  ranges.push({ start, end: fullText.length });
+
+  let wordSearchStart = 0; // optimisation: don't scan from 0 every paragraph
+  for (const range of ranges) {
+    const paraText  = fullText.slice(range.start, range.end);
+    const paraStart = range.start;
+    const paraEnd   = range.end;
+
+    let firstWI = -1;
+    let lastWI  = -1;
+    for (let i = wordSearchStart; i < words.length; i++) {
+      const w = words[i]!;
+      if (w.charStart >= paraEnd) break;
+      if (w.charStart >= paraStart) {
+        if (firstWI === -1) { firstWI = i; wordSearchStart = i; }
+        lastWI = i;
+      }
+    }
+
+    vrParagraphs.push({
+      text:         paraText,
+      absStart:     paraStart,
+      firstWordIdx: firstWI,
+      lastWordIdx:  lastWI,
+      el:           null,
+    });
+  }
+}
 
 function escapeHtml(s: string): string {
-  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\n/g,'<br>');
+  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 }
+
+/** Render a paragraph as plain text (no spans). */
+function renderParaPlain(p: VRParagraph): void {
+  if (!p.el) return;
+  p.el.innerHTML = escapeHtml(p.text).replace(/\n/g, '<br>');
+}
+
+/** Render a paragraph with word-<span>s so each word can be highlighted/clicked. */
+function renderParaSpanned(p: VRParagraph): void {
+  if (!p.el) return;
+  if (p.firstWordIdx === -1) { renderParaPlain(p); return; }
+
+  // words[i].charStart is absolute; subtract p.absStart to get paragraph-local offset.
+  const base = p.absStart;
+  let html   = '';
+  let cursor = 0; // paragraph-local cursor
+
+  for (let i = p.firstWordIdx; i <= p.lastWordIdx; i++) {
+    const w          = words[i]!;
+    const localStart = w.charStart - base;
+    const localEnd   = w.charEnd   - base;
+    if (localStart > cursor) {
+      html += escapeHtml(p.text.slice(cursor, localStart)).replace(/\n/g, '<br>');
+    }
+    html += `<span class="reader-word" data-idx="${i}">${escapeHtml(w.word)}</span>`;
+    cursor = localEnd;
+  }
+  if (cursor < p.text.length) {
+    html += escapeHtml(p.text.slice(cursor)).replace(/\n/g, '<br>');
+  }
+  p.el.innerHTML = html;
+}
+
+/** Return the paragraph index that contains global word index `wi`. */
+function paragraphForWord(wi: number): number {
+  // Binary-search over firstWordIdx / lastWordIdx ranges for O(log n)
+  let lo = 0; let hi = vrParagraphs.length - 1;
+  while (lo <= hi) {
+    const mid = (lo + hi) >> 1;
+    const p   = vrParagraphs[mid]!;
+    if (p.firstWordIdx === -1 || wi > p.lastWordIdx)  { lo = mid + 1; continue; }
+    if (wi < p.firstWordIdx)                           { hi = mid - 1; continue; }
+    return mid;
+  }
+  return Math.max(0, Math.min(lo, vrParagraphs.length - 1));
+}
+
+/**
+ * Ensure paragraphs near `activePI` are spanified; demote distant ones to plain
+ * (unless they are kept live by the scroll observer).
+ * Called on every word advance and on initial render.
+ */
+function vrUpdateLiveRange(activePI: number): void {
+  const lo = Math.max(0, activePI - VRENDER_LOOKBEHIND);
+  const hi = Math.min(vrParagraphs.length - 1, activePI + VRENDER_LOOKAHEAD);
+
+  // Update playback-live set
+  const nextPlaybackLive = new Set<number>();
+  for (let i = lo; i <= hi; i++) nextPlaybackLive.add(i);
+
+  // Spanify anything newly needed (playback or scroll)
+  for (const i of nextPlaybackLive) {
+    if (!vrLiveParagraphs.has(i)) {
+      vrLiveParagraphs.add(i);
+      renderParaSpanned(vrParagraphs[i]!);
+    }
+  }
+
+  // Demote paragraphs no longer needed by playback AND not kept live by scroll
+  for (const pi of Array.from(vrLiveParagraphs)) {
+    if (!nextPlaybackLive.has(pi) && !vrScrollLive.has(pi)) {
+      vrLiveParagraphs.delete(pi);
+      renderParaPlain(vrParagraphs[pi]!);
+    }
+  }
+
+  vrActiveParagraphIdx = activePI;
+}
+
+/** Called by the IntersectionObserver when a paragraph div enters/leaves viewport. */
+function vrHandleIntersection(entries: IntersectionObserverEntry[]): void {
+  for (const entry of entries) {
+    const div = entry.target as HTMLDivElement;
+    const pi  = vrParagraphs.findIndex(p => p.el === div);
+    if (pi === -1) continue;
+
+    if (entry.isIntersecting) {
+      // Spanify this paragraph and its neighbours
+      const lo = Math.max(0, pi - VRENDER_SCROLL_PAD);
+      const hi = Math.min(vrParagraphs.length - 1, pi + VRENDER_SCROLL_PAD);
+      for (let i = lo; i <= hi; i++) {
+        vrScrollLive.add(i);
+        if (!vrLiveParagraphs.has(i)) {
+          vrLiveParagraphs.add(i);
+          renderParaSpanned(vrParagraphs[i]!);
+        }
+      }
+    } else {
+      // Only remove from scroll-live set; actual demotion happens lazily in
+      // vrUpdateLiveRange so we don't thrash during fast scrolling
+      vrScrollLive.delete(pi);
+    }
+  }
+}
+
+/** Attach the IntersectionObserver to all paragraph divs. */
+function vrAttachObserver(container: HTMLElement): void {
+  vrDetachObserver();
+  vrObserver = new IntersectionObserver(vrHandleIntersection, {
+    root:       container,
+    rootMargin: '300px 0px 300px 0px', // pre-load 300 px before entering view
+    threshold:  0,
+  });
+  for (const p of vrParagraphs) {
+    if (p.el) vrObserver.observe(p.el);
+  }
+}
+
+/** Disconnect the observer and clear scroll-live state. */
+function vrDetachObserver(): void {
+  if (vrObserver) { vrObserver.disconnect(); vrObserver = null; }
+  vrScrollLive.clear();
+}
+
+// ─── Reading mode ─────────────────────────────────────────────────────────────
 
 function enterReadingMode(): void {
   const ta = $<HTMLTextAreaElement>('#text-input');
   const dp = $<HTMLElement>('#spokn-display');
   if (!ta || !dp) return;
-  let html = ''; let cursor = 0;
-  for (let i = 0; i < words.length; i++) {
-    const w = words[i]!;
-    html += escapeHtml(fullText.slice(cursor, w.charStart));
-    html += `<span class="reader-word" data-idx="${i}">${escapeHtml(w.word)}</span>`;
-    cursor = w.charEnd;
-  }
-  html += escapeHtml(fullText.slice(cursor));
-  dp.innerHTML = html;
-  // Set hover color variables from active theme
+
+  // Build paragraph map
+  buildVRParagraphs();
+
+  // Set hover color CSS variables
   const bg = getHighlightBg();
   const fg = getHighlightFg();
   const hoverBg = bg === 'transparent'
@@ -175,9 +377,29 @@ function enterReadingMode(): void {
     : bg.replace(/[\d.]+\)$/, '0.18)');
   dp.style.setProperty('--theme-hover-bg',   hoverBg);
   dp.style.setProperty('--theme-hover-color', bg === 'transparent' ? 'inherit' : fg);
+
+  // Build one <div> per paragraph — content filled lazily below
+  dp.innerHTML = '';
+  const fragment = document.createDocumentFragment();
+  for (const p of vrParagraphs) {
+    const div = document.createElement('div');
+    div.className = 'vr-para';
+    p.el = div;
+    fragment.appendChild(div);
+  }
+  dp.appendChild(fragment);
+
+  // Spanify the initial window around the current word
+  const startPI = paragraphForWord(wordIndex);
+  vrUpdateLiveRange(startPI);
+
   ta.style.display = 'none';
   dp.style.display = 'block';
   dp.addEventListener('click', onWordClick);
+
+  // Attach scroll observer — must be after dp is visible so IntersectionObserver fires
+  vrAttachObserver(dp);
+
   const editActions = document.getElementById('panel-actions-edit');
   const readActions = document.getElementById('panel-actions-reading');
   const title       = document.getElementById('panel-title');
@@ -200,9 +422,15 @@ function exitReadingMode(): void {
   const dp = $<HTMLElement>('#spokn-display');
   if (!ta || !dp) return;
   dp.removeEventListener('click', onWordClick);
+  vrDetachObserver();
   ta.style.display = '';
   dp.style.display = 'none';
   dp.innerHTML = '';
+  // Clean up virtual renderer state
+  vrParagraphs = [];
+  vrLiveParagraphs.clear();
+  vrScrollLive.clear();
+  vrActiveParagraphIdx = -1;
   // Swap header back
   const editActions = document.getElementById('panel-actions-edit');
   const readActions = document.getElementById('panel-actions-reading');
@@ -215,11 +443,20 @@ function exitReadingMode(): void {
 function highlightWord(idx: number): void {
   const dp = $<HTMLElement>('#spokn-display');
   if (!dp) return;
+
+  // Clear previous highlight (only within live paragraphs — cheap)
   dp.querySelectorAll<HTMLElement>('.reader-word-active').forEach(el => {
     el.classList.remove('reader-word-active');
     el.style.background = '';
     el.style.color = '';
   });
+
+  // Ensure the paragraph for this word is in the live (spanified) window
+  const pi = paragraphForWord(idx);
+  if (pi !== vrActiveParagraphIdx) {
+    vrUpdateLiveRange(pi);
+  }
+
   const span = dp.querySelector<HTMLElement>(`.reader-word[data-idx="${idx}"]`);
   if (!span) return;
   span.classList.add('reader-word-active');
@@ -543,12 +780,57 @@ async function extractTextFromPDF(file: File): Promise<string> {
   const buf = await file.arrayBuffer();
   const pdf = await lib.getDocument({ data: buf }).promise;
   const pages: string[] = [];
+
   for (let i = 1; i <= pdf.numPages; i++) {
     const page    = await pdf.getPage(i);
     const content = await page.getTextContent();
-    pages.push((content.items as any[]).filter(x => typeof x.str === 'string').map((x: any) => x.str).join(' '));
     setStatus(`Parsing page ${i} / ${pdf.numPages}…`, 'info');
+
+    // Each item has: str (text), transform [a,b,c,d,tx,ty] (ty = baseline y),
+    // height (font height in pts).  We use ty and height to detect line and
+    // paragraph breaks.
+    const items = (content.items as any[]).filter(x => typeof x.str === 'string' && x.str.length > 0);
+    if (items.length === 0) { pages.push(''); continue; }
+
+    // Average font height across the page — used to decide gap thresholds
+    const avgHeight = items.reduce((s: number, x: any) => s + (x.height || 12), 0) / items.length;
+    // A gap larger than this multiple of line height = new paragraph
+    const PARA_GAP_FACTOR = 1.4;
+
+    let pageText = '';
+    let prevY    = items[0].transform[5] as number;
+    let prevX2   = (items[0].transform[4] as number) + (items[0].width as number ?? 0);
+
+    for (let j = 0; j < items.length; j++) {
+      const item   = items[j];
+      const str    = item.str as string;
+      const ty     = item.transform[5] as number;   // baseline y (PDF coords — y grows up)
+      const tx     = item.transform[4] as number;   // x position
+      const h      = (item.height as number) || avgHeight;
+      const gap    = prevY - ty; // positive when ty moved down (PDF y-axis is inverted in display)
+
+      if (j === 0) {
+        pageText += str;
+      } else if (Math.abs(gap) > avgHeight * PARA_GAP_FACTOR) {
+        // Large vertical gap → paragraph break
+        pageText += '\n\n' + str;
+      } else if (Math.abs(gap) > h * 0.4) {
+        // Smaller gap → new line
+        pageText += '\n' + str;
+      } else {
+        // Same line — add a space only if item doesn't already start with one
+        // and the previous item didn't end with one, and there's actual x-gap
+        const needsSpace = !pageText.endsWith(' ') && !str.startsWith(' ') && (tx > prevX2 - 1);
+        pageText += (needsSpace ? ' ' : '') + str;
+      }
+
+      prevY  = ty;
+      prevX2 = tx + (item.width as number ?? 0);
+    }
+
+    pages.push(pageText.trim());
   }
+
   return pages.join('\n\n');
 }
 
@@ -1328,6 +1610,9 @@ function injectStyles(): void {
     .reader-word{border-radius:3px;padding:0 1px;cursor:pointer;transition:background .08s,color .08s;}
     .reader-word:hover{background:var(--theme-hover-bg,rgba(255,255,255,0.1));color:var(--theme-hover-color,inherit);}
     .reader-word-active{border-radius:3px;padding:0 1px;font-weight:600;}
+    /* Virtual-renderer paragraph blocks */
+    .vr-para{margin-bottom:0.9em;line-height:inherit;}
+    .vr-para:last-child{margin-bottom:0;}
 
     /* Edit button — shown in reading mode */
     .btn-edit-mode {
