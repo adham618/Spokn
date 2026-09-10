@@ -1,6 +1,8 @@
 import type { PlaybackState, ReadingMode } from './types.js';
 
 export type Message =
+  | { type: 'PING' }
+  | { type: 'RELOAD_ACTIVE_TAB' }
   | { type: 'PLAY'; mode: ReadingMode }
   | { type: 'PAUSE' }
   | { type: 'RESUME' }

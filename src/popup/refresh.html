@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="en" dir="ltr">
+
+<head>
+  <meta charset="UTF-8" />
+  <title>Spokn</title>
+  <style>
+    *,
+    *::before,
+    *::after {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    html,
+    body {
+      width: 260px;
+      overflow: hidden;
+      background: #1B1C1F;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      -webkit-font-smoothing: antialiased;
+      color: #e8edf5;
+    }
+
+    /* exact same structure as reader header */
+    .header {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 14px 16px 12px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+    }
+
+    .logo-name {
+      font-size: 16px;
+      font-weight: 700;
+      color: #f0f4ff;
+    }
+
+    .logo-name span {
+      color: #0277D4;
+    }
+
+    .body {
+      padding: 14px 16px 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .desc {
+      font-size: 12px;
+      color: rgba(255, 255, 255, 0.4);
+      line-height: 1.6;
+    }
+
+    .refresh-btn {
+      width: 100%;
+      padding: 8px 0;
+      border-radius: 8px;
+      border: none;
+      background: #0277D4;
+      color: #fff;
+      font-size: 13px;
+      font-weight: 600;
+      font-family: inherit;
+      cursor: pointer;
+      transition: filter 0.15s;
+    }
+
+    .refresh-btn:hover {
+      filter: brightness(1.15);
+    }
+
+    .refresh-btn:active {
+      filter: brightness(0.9);
+    }
+
+    .hint {
+      font-size: 10px;
+      color: #64748b;
+    }
+  </style>
+</head>
+
+<body>
+  <div class="header">
+    <img src="/icons/icon48.png" alt="" width="24" height="24" />
+    <span class="logo-name">Spokn</span>
+  </div>
+  <div class="body">
+    <p class="desc">This tab was open before Spokn loaded - refresh it to enable the extension.</p>
+    <button class="refresh-btn" id="refreshBtn">Refresh page</button>
+    <p class="hint">Unsaved progress may be lost.</p>
+  </div>
+
+  <script src="./refresh.js"></script>
+</body>
+
+</html>

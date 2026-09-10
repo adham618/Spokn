@@ -27,6 +27,12 @@
     toastTimer = setTimeout(() => (toastMsg = ''), duration);
   }
 
+  async function handleRefreshTab() {
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    if (tab?.id) await chrome.tabs.reload(tab.id);
+    window.close();
+  }
+
   async function sendToBackground(msg: Message): Promise<void> {
     try {
       await chrome.runtime.sendMessage(msg);
@@ -93,7 +99,6 @@
     }
 
     if (mode === 'selection') {
-      // Check if there is a selection
       const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
       if (!tab?.id) return;
       await sendToTab({ type: 'PLAY', mode: 'selection' });
@@ -117,11 +122,9 @@
 
   async function handleModeChange(mode: ReadingMode) {
     playbackState = { ...playbackState, mode };
-    // 'selection' is transient — don't persist it
     if (mode !== 'selection') {
       await chrome.storage.sync.set({ mode });
     }
-    // If switching away from click mode while it's active, disable it
     if (mode !== 'click') {
       await sendToTab({ type: 'CLICK_TO_READ_TOGGLE', enabled: false });
     }
@@ -171,14 +174,8 @@
 
   async function handleResetConfirm() {
     resetConfirmVisible = false;
-    // Always clear storage from the popup side — covers pages where
-    // the content script isn't running (new tab, chrome:// pages, etc.)
     await chrome.storage.sync.clear();
-    // Tell the content script to reset its in-memory state, re-apply default
-    // theme, reset hoverBorder, and rebuild the toolbar if it's open.
-    // Fails silently on pages where the content script isn't injected.
     await sendToTab({ type: 'RESET_SETTINGS' });
-    // Reset popup UI state to match
     playbackState = { ...DEFAULT_STATE };
     favoriteVoices = [];
     highlightTheme = DEFAULT_THEME_ID;

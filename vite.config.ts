@@ -66,7 +66,7 @@ export default defineConfig({
       disableAutoLaunch: true,
       printSummary: true,
       skipManifestValidation: true,
-      additionalInputs: ['src/reader/reader.html'],
+      additionalInputs: ['src/reader/reader.html', 'src/popup/refresh.html', 'src/popup/refresh.js'],
       // Use relative base for popup HTML so asset paths resolve in extension context
       htmlViteConfig: {
         base: './',

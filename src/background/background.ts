@@ -4,6 +4,7 @@ import { DEFAULT_STATE } from '../shared/types.js';
 
 let globalState: PlaybackState = { ...DEFAULT_STATE };
 let activeTabId: number | null = null;
+let tabToReload: number | null = null;
 
 // Seed mode from storage on startup so the keyboard shortcut fallback uses
 // the user's saved preference rather than the DEFAULT_STATE 'page' value.
@@ -38,7 +39,13 @@ async function sendToTab(tabId: number, message: Message): Promise<MessageRespon
 chrome.action.onClicked.addListener(async (tab) => {
   if (!tab.id) return;
   activeTabId = tab.id;
-  await sendToTab(tab.id, { type: 'TOGGLE_TOOLBAR' });
+  const res = await sendToTab(tab.id, { type: 'TOGGLE_TOOLBAR' });
+  if (!res.success) {
+    tabToReload = tab.id; // store before popup opens
+    await chrome.action.setPopup({ popup: 'src/popup/refresh.html' });
+    await chrome.action.openPopup();
+    await chrome.action.setPopup({ popup: '' });
+  }
 });
 
 // ─── Context menu — "Read selection" ─────────────────────────────────────────
@@ -85,6 +92,15 @@ chrome.runtime.onMessage.addListener(
           sendResponse({ success: true } satisfies MessageResponse);
           return;
         }
+      }
+
+      // Reload request from the refresh popup — use the tab ID stored before popup opened
+      if (msg.type === 'RELOAD_ACTIVE_TAB') {
+        const idToReload = tabToReload ?? activeTabId;
+        tabToReload = null;
+        if (idToReload) await chrome.tabs.reload(idToReload);
+        sendResponse({ success: true } satisfies MessageResponse);
+        return;
       }
 
       const tab = activeTabId

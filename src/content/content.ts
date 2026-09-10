@@ -960,6 +960,10 @@ chrome.runtime.onMessage.addListener(
       try {
         switch (msg.type) {
 
+          case 'PING':
+            sendResponse({ success: true } satisfies MessageResponse);
+            break;
+
           case 'TOGGLE_TOOLBAR':
             if (window.self === window.top) {
               toggleToolbar((msg as any).showClickHint === true);
