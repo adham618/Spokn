@@ -20,7 +20,7 @@ import type { ToolbarState } from './floatingToolbar.js';
 import { FloatingToolbar } from './floatingToolbar.js';
 import { applyTheme, DEFAULT_THEME_ID, removeTheme } from './highlightTheme.js';
 import type { WalkResult } from './textWalker.js';
-import { walkPageAsync, walkSelection, walkText, WORD_CLASS } from './textWalker.js';
+import { extractPageText, walkPageAsync, walkSelection, walkText, WORD_CLASS } from './textWalker.js';
 import { getVoices, TTS } from './tts.js';
 
 const LOG = import.meta.env.DEV ? (...args: unknown[]) => console.log('[Spokn]', ...args) : () => {};
@@ -391,6 +391,23 @@ function createToolbar(): FloatingToolbar {
       // Feature: open reader page
       onOpenReaderPage: () => {
         chrome.runtime.sendMessage({ type: 'OPEN_READER_PAGE' } as Message).catch(() => {});
+      },
+
+      // Feature: extract page text and send to reader
+      onSendToReader: () => {
+        toolbar?.setSendingState(true);
+        const extracted = extractPageText();
+        if (extracted.text) {
+          chrome.runtime.sendMessage({
+            type: 'OPEN_READER_PAGE_WITH_TEXT',
+            title: extracted.title,
+            text: extracted.text,
+            url: location.href,
+          } as Message).catch(() => {});
+        } else {
+          toolbar?.showError('No readable text found on this page');
+        }
+        setTimeout(() => toolbar?.setSendingState(false), 1000);
       },
     },
     buildToolbarState(),
@@ -1125,6 +1142,17 @@ chrome.runtime.onMessage.addListener(
             break;
 
           // Feature: open reader page — handled by onOpenReaderPage toolbar callback
+          // Feature: reader requests page text — background relays this to content.ts
+          case 'GET_PAGE_TEXT': {
+            const extracted = extractPageText();
+            if (extracted.text) {
+              sendResponse({ success: true, title: extracted.title, text: extracted.text } satisfies MessageResponse);
+            } else {
+              sendResponse({ success: false, error: 'No readable text found on this page' } satisfies MessageResponse);
+            }
+            break;
+          }
+
           // (content sends to background directly; background opens the tab)
           case 'OPEN_READER_PAGE':
             // This message is only ever sent content→background, never background→content.

@@ -8,9 +8,118 @@
 
 import { HIGHLIGHT_THEMES } from '../content/highlightTheme.js';
 
+// ─── Reading themes ───────────────────────────────────────────────────────────
+
+interface ReadingTheme {
+  id: string;
+  label: string;
+  /** Color shown in the swatch circle */
+  swatch: string;
+  /** CSS vars applied to .spokn-display */
+  bg: string;
+  color: string;
+  fontFamily: string;
+  fontSize: string;
+  lineHeight: string;
+  /** Optional extra padding multiplier for the display box */
+  padding: string;
+  /** Letter spacing */
+  letterSpacing: string;
+}
+
+const READING_THEMES: ReadingTheme[] = [
+  {
+    id: 'dark',
+    label: 'Dark',
+    swatch: '#1a1d24',
+    bg: '#0d0f14',
+    color: 'rgba(232,237,245,0.75)',
+    fontFamily: '-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif',
+    fontSize: '15px',
+    lineHeight: '1.75',
+    padding: '20px',
+    letterSpacing: '0em',
+  },
+  {
+    id: 'sepia',
+    label: 'Sepia',
+    swatch: '#e8d9b5',
+    bg: '#f5efe0',
+    color: '#3a2e1e',
+    fontFamily: 'Georgia,"Times New Roman",Times,serif',
+    fontSize: '16px',
+    lineHeight: '1.9',
+    padding: '28px 32px',
+    letterSpacing: '0.01em',
+  },
+  {
+    id: 'paper',
+    label: 'Paper',
+    swatch: '#f7f7f5',
+    bg: '#fafaf8',
+    color: '#1a1a1a',
+    fontFamily: '-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif',
+    fontSize: '15px',
+    lineHeight: '1.8',
+    padding: '22px 26px',
+    letterSpacing: '0em',
+  },
+  {
+    id: 'focus',
+    label: 'Focus',
+    swatch: '#111827',
+    bg: '#111318',
+    color: '#c8d6ea',
+    fontFamily: '-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif',
+    fontSize: '17px',
+    lineHeight: '2.05',
+    padding: '28px 36px',
+    letterSpacing: '0.015em',
+  },
+];
+
+// ─── Font families ────────────────────────────────────────────────────────────
+
+interface FontFamily {
+  id: string;
+  label: string;
+  stack: string;
+}
+
+const FONT_FAMILIES: FontFamily[] = [
+  {
+    id: 'system',
+    label: 'System',
+    stack: '-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif',
+  },
+  {
+    id: 'serif',
+    label: 'Serif',
+    stack: 'Georgia,"Times New Roman",Times,serif',
+  },
+  {
+    id: 'humanist',
+    label: 'Humanist',
+    stack: 'Verdana,Geneva,Tahoma,sans-serif',
+  },
+  {
+    id: 'mono',
+    label: 'Mono',
+    stack: '"Courier New",Courier,monospace',
+  },
+  {
+    id: 'dyslexic',
+    label: 'Dyslexic',
+    stack: 'OpenDyslexic,Verdana,Geneva,sans-serif',
+  },
+];
+
 // ─── Storage key ─────────────────────────────────────────────────────────────
 
-const STORAGE_KEY = 'readerSettings';
+const STORAGE_KEY          = 'readerSettings';
+const LIBRARY_KEY          = 'readerLibrary';
+const LIBRARY_TEXT_PREFIX  = 'readerLibrary_text_';  // per-item text key
+const READER_TEXT_KEY      = 'readerText';            // active editor text (kept separate from settings)
 
 interface ReaderSettings {
   voiceName: string;
@@ -19,10 +128,16 @@ interface ReaderSettings {
   volume: number;
   autoScroll: boolean;
   highlightTheme: string;
+  readingTheme: string;
+  fontSize: number;
+  fontFamily: string;
   sleepTimerMinutes: number;
   favoriteVoices: string[];
-  text: string;
+  // NOTE: text and wordIndex are intentionally NOT stored here anymore.
+  // text  → READER_TEXT_KEY  (separate key so a large doc doesn't bloat the settings object)
+  // wordIndex → still here (it's a small number, fine to keep)
   wordIndex: number;
+  activeLibraryItemId: string | null;
 }
 
 const DEFAULT_SETTINGS: ReaderSettings = {
@@ -32,11 +147,155 @@ const DEFAULT_SETTINGS: ReaderSettings = {
   volume: 1.0,
   autoScroll: true,
   highlightTheme: 'sky',
+  readingTheme: 'dark',
+  fontSize: 0,          // 0 = follow theme default
+  fontFamily: '',       // '' = follow theme default
   sleepTimerMinutes: 0,
   favoriteVoices: [],
-  text: '',
   wordIndex: 0,
+  activeLibraryItemId: null,
 };
+
+// ─── Library types & storage ─────────────────────────────────────────────────
+
+// The index stored under LIBRARY_KEY contains everything EXCEPT the text body.
+// Text is stored separately under `readerLibrary_text_<id>` so that loading
+// the library list never deserialises large strings, and each book/article can
+// be as large as the user's disk allows (unlimitedStorage permission granted).
+interface LibraryItem {
+  id: string;
+  title: string;
+  // NOTE: `text` is NOT in the index — load it with libraryLoadText(id)
+  wordCount: number;
+  wordIndex: number;
+  savedAt: number; // timestamp ms
+}
+
+// Full item with text — used only when actually loading a document into the editor
+interface LibraryItemWithText extends LibraryItem {
+  text: string;
+}
+
+function libraryTextKey(id: string): string {
+  return LIBRARY_TEXT_PREFIX + id;
+}
+
+async function loadLibrary(): Promise<LibraryItem[]> {
+  try {
+    const res = await chrome.storage.local.get(LIBRARY_KEY);
+    return (res[LIBRARY_KEY] as LibraryItem[]) ?? [];
+  } catch { return []; }
+}
+
+async function saveLibrary(items: LibraryItem[]): Promise<void> {
+  try {
+    await chrome.storage.local.set({ [LIBRARY_KEY]: items });
+  } catch (e) {
+    showStorageError(e);
+    throw e; // re-throw so callers can react
+  }
+}
+
+async function libraryLoadText(id: string): Promise<string> {
+  try {
+    const res = await chrome.storage.local.get(libraryTextKey(id));
+    return (res[libraryTextKey(id)] as string) ?? '';
+  } catch { return ''; }
+}
+
+async function librarySaveText(id: string, text: string): Promise<void> {
+  try {
+    await chrome.storage.local.set({ [libraryTextKey(id)]: text });
+  } catch (e) {
+    showStorageError(e);
+    throw e;
+  }
+}
+
+/** Extract a display title from the first non-empty line of text. */
+function extractTitle(text: string): string {
+  const first = text.split('\n').find(l => l.trim().length > 0) ?? '';
+  return first.trim().slice(0, 80) || 'Untitled';
+}
+
+/**
+ * Save a new library item. Text is written to its own key.
+ * Returns the new item (without text) on success, or throws on storage error.
+ */
+async function librarySaveItem(text: string, wIndex: number): Promise<LibraryItem> {
+  const items = await loadLibrary();
+  const item: LibraryItem = {
+    id: `lib_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+    title: extractTitle(text),
+    wordCount: buildWords(text).length,
+    wordIndex: wIndex,
+    savedAt: Date.now(),
+  };
+  // Write text first — if this fails we haven't touched the index yet
+  await librarySaveText(item.id, text);
+  items.unshift(item); // newest first
+  await saveLibrary(items);
+  return item;
+}
+
+async function libraryUpdateProgress(id: string, wIndex: number): Promise<void> {
+  const items = await loadLibrary();
+  const item = items.find(i => i.id === id);
+  if (item) { item.wordIndex = wIndex; await saveLibrary(items); }
+}
+
+async function libraryDeleteItem(id: string): Promise<void> {
+  const items = await loadLibrary();
+  await saveLibrary(items.filter(i => i.id !== id));
+  // Remove the text blob — fire-and-forget, non-fatal if it fails
+  chrome.storage.local.remove(libraryTextKey(id)).catch(() => {});
+}
+
+// ─── Migration ───────────────────────────────────────────────────────────────
+// Detects the old format where item.text was stored inline inside the index
+// array, and transparently upgrades to the split format on first load.
+
+async function migrateLibraryIfNeeded(): Promise<void> {
+  try {
+    const res = await chrome.storage.local.get(LIBRARY_KEY);
+    const raw = (res[LIBRARY_KEY] ?? []) as (LibraryItem & { text?: string })[];
+    const needsMigration = raw.some(i => typeof i.text === 'string');
+    if (!needsMigration) return;
+
+    const migrated: LibraryItem[] = [];
+    for (const item of raw) {
+      if (typeof item.text === 'string' && item.text.length > 0) {
+        // Write text to its own key (best-effort)
+        await librarySaveText(item.id, item.text).catch(() => {});
+      }
+      // Strip text from the index entry
+      const { text: _text, ...rest } = item;
+      migrated.push(rest as LibraryItem);
+    }
+    await saveLibrary(migrated);
+  } catch { /* migration failure is non-fatal */ }
+}
+
+// ─── Active editor text storage ──────────────────────────────────────────────
+// The text currently in the editor is stored under its own key (READER_TEXT_KEY)
+// so that large documents (novels, PDFs) don't bloat the small settings object.
+
+async function loadStoredText(): Promise<string> {
+  try {
+    const res = await chrome.storage.local.get(READER_TEXT_KEY);
+    return (res[READER_TEXT_KEY] as string) ?? '';
+  } catch { return ''; }
+}
+
+async function saveStoredText(text: string): Promise<void> {
+  try {
+    await chrome.storage.local.set({ [READER_TEXT_KEY]: text });
+  } catch (e) {
+    // Silently ignore — this is a background autosave; user-initiated saves
+    // go through librarySaveText which shows the error toast.
+    console.warn('[Spokn] Failed to persist editor text:', e);
+  }
+}
 
 async function loadStoredSettings(): Promise<ReaderSettings> {
   try {
@@ -52,6 +311,46 @@ async function saveStoredSettings(partial: Partial<ReaderSettings>): Promise<voi
     const current = await loadStoredSettings();
     await chrome.storage.local.set({ [STORAGE_KEY]: { ...current, ...partial } });
   } catch {}
+}
+
+// ─── Storage error helper ─────────────────────────────────────────────────────
+
+function showStorageError(e: unknown): void {
+  const msg = e instanceof Error ? e.message : String(e);
+  // QuotaExceededError fires even with unlimitedStorage if the disk is full
+  const isFull = msg.toLowerCase().includes('quota') || msg.toLowerCase().includes('full');
+  showErrorToast(
+    isFull
+      ? 'Storage full — free up disk space to save more items'
+      : 'Storage error — could not save. Try again or reload.',
+  );
+}
+
+/** Red-tinted toast for errors — distinct from the normal success toast. */
+function showErrorToast(msg: string): void {
+  let t = document.getElementById('reader-toast-error');
+  if (!t) {
+    t = document.createElement('div');
+    t.id = 'reader-toast-error';
+    // Inline the minimal style so it works even before injectStyles() runs
+    t.style.cssText = [
+      'position:fixed', 'bottom:80px', 'left:50%', 'transform:translateX(-50%) translateY(20px)',
+      'background:#c0392b', 'color:#fff', 'padding:10px 18px', 'border-radius:8px',
+      'font-size:13px', 'font-family:inherit', 'z-index:99999',
+      'opacity:0', 'transition:opacity .2s,transform .2s', 'pointer-events:none',
+      'max-width:340px', 'text-align:center', 'line-height:1.4',
+    ].join(';');
+    document.body.appendChild(t);
+  }
+  t.textContent = msg;
+  // Force reflow so transition fires even on repeated calls
+  void (t as HTMLElement).offsetHeight;
+  t.style.opacity  = '1';
+  t.style.transform = 'translateX(-50%) translateY(0)';
+  setTimeout(() => {
+    (t as HTMLElement).style.opacity   = '0';
+    (t as HTMLElement).style.transform = 'translateX(-50%) translateY(20px)';
+  }, 4000);
 }
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -95,6 +394,9 @@ async function markTipShown(): Promise<void> {
   try { await chrome.storage.local.set({ spokn_last_tip: Date.now() }); } catch {}
 }
 let activeVoiceTab: 'all' | 'favs' = 'all';
+let libraryItems: LibraryItem[] = [];
+let activeLibraryItemId: string | null = null;
+let libraryDrawerOpen = false;
 const langNames = new Intl.DisplayNames([navigator.language, 'en'], { type: 'language' });
 
 let rate              = DEFAULT_SETTINGS.rate;
@@ -102,6 +404,9 @@ let pitch             = DEFAULT_SETTINGS.pitch;
 let volume            = DEFAULT_SETTINGS.volume;
 let autoScroll        = DEFAULT_SETTINGS.autoScroll;
 let highlightThemeId  = DEFAULT_SETTINGS.highlightTheme;
+let readingThemeId    = DEFAULT_SETTINGS.readingTheme;
+let userFontSize      = DEFAULT_SETTINGS.fontSize;   // 0 = follow theme default
+let userFontFamily    = DEFAULT_SETTINGS.fontFamily;  // '' = follow theme default
 let sleepTimerMinutes = DEFAULT_SETTINGS.sleepTimerMinutes;
 let sleepTimerHandle: ReturnType<typeof setTimeout> | null = null;
 let sleepRemainingMs  = 0;
@@ -109,6 +414,130 @@ let sleepEndsAt       = 0; // wall-clock time when timer will fire
 
 function getHighlightBg():    string { return HIGHLIGHT_THEMES.find(t => t.id === highlightThemeId)?.wordBg    ?? 'transparent'; }
 function getHighlightFg():    string { return HIGHLIGHT_THEMES.find(t => t.id === highlightThemeId)?.wordColor ?? 'inherit'; }
+
+function applyReadingTheme(id: string): void {
+  readingThemeId = id;
+  const theme = READING_THEMES.find(t => t.id === id) ?? READING_THEMES[0]!;
+  const dp = document.getElementById('spokn-display') as HTMLElement | null;
+  const ta = document.getElementById('text-input') as HTMLTextAreaElement | null;
+
+  // Resolved font size: user override wins, else fall back to theme default
+  const resolvedSize   = userFontSize > 0 ? `${userFontSize}px` : theme.fontSize;
+  // Resolved font family: user override wins, else fall back to theme default
+  const resolvedFamily = userFontFamily ? userFontFamily : theme.fontFamily;
+
+  // Apply to display box
+  if (dp) {
+    dp.style.background    = theme.bg;
+    dp.style.color         = theme.color;
+    dp.style.fontFamily    = resolvedFamily;
+    dp.style.fontSize      = resolvedSize;
+    dp.style.lineHeight    = theme.lineHeight;
+    dp.style.padding       = theme.padding;
+    dp.style.letterSpacing = theme.letterSpacing;
+    // Light themes need a different scrollbar, border, and word hover colour
+    const isLight = theme.id === 'sepia' || theme.id === 'paper';
+    dp.style.borderColor = isLight ? 'rgba(0,0,0,0.1)' : 'rgba(2,119,212,0.25)';
+    dp.style.setProperty('--spokn-scrollbar-thumb', isLight ? 'rgba(0,0,0,0.2)' : 'rgba(255,255,255,0.1)');
+    dp.style.setProperty('--theme-hover-bg',    isLight ? 'rgba(0,0,0,0.08)'  : 'rgba(255,255,255,0.1)');
+    dp.style.setProperty('--theme-hover-color', isLight ? theme.color          : 'inherit');
+    dp.dataset.readingTheme = id;
+  }
+
+  // Mirror font/size to textarea so the edit view feels consistent.
+  // We intentionally skip fontFamily — the textarea is a utility input and
+  // should always use the UI font. Applying a serif stack (Sepia theme) to
+  // the textarea makes the placeholder look broken.
+  if (ta) {
+    ta.style.fontSize      = resolvedSize;
+    ta.style.lineHeight    = theme.lineHeight;
+    ta.style.letterSpacing = theme.letterSpacing;
+    const isLight = theme.id === 'sepia' || theme.id === 'paper';
+    if (isLight) {
+      ta.style.background  = theme.bg;
+      ta.style.color       = theme.color;
+      ta.style.borderColor = 'rgba(0,0,0,0.1)';
+      ta.style.setProperty('--ta-placeholder',     'rgba(0,0,0,0.25)');
+      ta.style.setProperty('--ta-scrollbar',       'rgba(0,0,0,0.18)');
+      ta.style.setProperty('--ta-scrollbar-hover', 'rgba(0,0,0,0.35)');
+    } else {
+      ta.style.background  = '';
+      ta.style.color       = '';
+      ta.style.borderColor = '';
+      ta.style.removeProperty('--ta-placeholder');
+      ta.style.removeProperty('--ta-scrollbar');
+      ta.style.removeProperty('--ta-scrollbar-hover');
+    }
+  }
+
+  // Sync font-size stepper display
+  syncFontSizeUI();
+  // Sync font-family picker display
+  syncFontFamilyUI();
+
+  // Update swatch active state
+  document.querySelectorAll<HTMLElement>('.reading-theme-swatch').forEach(el => {
+    el.classList.toggle('reading-theme-swatch-active', el.dataset.readingTheme === id);
+  });
+}
+
+const FONT_SIZE_MIN = 12;
+const FONT_SIZE_MAX = 28;
+
+/** Returns the currently active font size (user override or theme default). */
+function getActiveFontSize(): number {
+  if (userFontSize > 0) return userFontSize;
+  const theme = READING_THEMES.find(t => t.id === readingThemeId) ?? READING_THEMES[0]!;
+  return parseInt(theme.fontSize, 10);
+}
+
+/** Applies a new font size to the display and textarea without re-applying the full theme. */
+function applyFontSize(size: number): void {
+  userFontSize = Math.min(FONT_SIZE_MAX, Math.max(FONT_SIZE_MIN, size));
+  const px = `${userFontSize}px`;
+  const dp = document.getElementById('spokn-display') as HTMLElement | null;
+  const ta = document.getElementById('text-input') as HTMLTextAreaElement | null;
+  if (dp) dp.style.fontSize = px;
+  if (ta) ta.style.fontSize = px;
+  syncFontSizeUI();
+}
+
+/** Updates the stepper value label and button disabled states. */
+function syncFontSizeUI(): void {
+  const val  = document.getElementById('font-size-val');
+  const dec  = document.getElementById('font-size-dec') as HTMLButtonElement | null;
+  const inc  = document.getElementById('font-size-inc') as HTMLButtonElement | null;
+  const size = getActiveFontSize();
+  if (val)  val.textContent = `${size}px`;
+  if (dec)  dec.disabled = size <= FONT_SIZE_MIN;
+  if (inc)  inc.disabled = size >= FONT_SIZE_MAX;
+}
+
+/** Returns the active font stack (user override or theme default). */
+function getActiveFontFamily(): string {
+  if (userFontFamily) return userFontFamily;
+  const theme = READING_THEMES.find(t => t.id === readingThemeId) ?? READING_THEMES[0]!;
+  return theme.fontFamily;
+}
+
+/** Applies a new font family to the display and textarea. */
+function applyFontFamily(stack: string): void {
+  userFontFamily = stack;
+  const dp = document.getElementById('spokn-display') as HTMLElement | null;
+  const ta = document.getElementById('text-input') as HTMLTextAreaElement | null;
+  if (dp) dp.style.fontFamily = stack;
+  if (ta) ta.style.fontFamily = stack;
+  syncFontFamilyUI();
+}
+
+/** Updates the font-family pill active state. */
+function syncFontFamilyUI(): void {
+  const active = getActiveFontFamily();
+  document.querySelectorAll<HTMLElement>('.font-family-pill').forEach(el => {
+    const match = FONT_FAMILIES.find(f => f.stack === active);
+    el.classList.toggle('font-family-pill-active', el.dataset.fontFamily === (match?.id ?? ''));
+  });
+}
 
 // ─── DOM helpers ─────────────────────────────────────────────────────────────
 
@@ -123,11 +552,18 @@ function debounce<T extends unknown[]>(fn: (...args: T) => void, ms: number): (.
 }
 
 const persistText = debounce((text: string) => {
-  saveStoredSettings({ text });
+  saveStoredText(text).catch(() => {});
 }, 800);
 
 const persistWordIndex = debounce((idx: number) => {
   saveStoredSettings({ wordIndex: idx });
+  // Also keep the library item's progress up to date so the library panel
+  // always reflects real progress without requiring a manual Save click.
+  if (activeLibraryItemId) {
+    libraryUpdateProgress(activeLibraryItemId, idx).then(() => {
+      loadLibrary().then(items => { libraryItems = items; renderLibrary(); });
+    });
+  }
 }, 500);
 
 // ─── Build words ─────────────────────────────────────────────────────────────
@@ -412,9 +848,33 @@ function onWordClick(e: Event): void {
   const span = (e.target as Element).closest<HTMLElement>('.reader-word');
   if (!span) return;
   const idx = parseInt(span.dataset.idx ?? '0', 10);
-  stopAll();
-  wordIndex = idx;
-  playFrom(idx);
+
+  // Cancel speech and reset playback state — but do NOT call stopAll() because
+  // that tears down the display DOM (exitReadingMode), causing the visible flash
+  // and scroll-to-top before playFrom re-renders everything from scratch.
+  speechSynthesis.cancel();
+  utterances = [];
+  currentUtteranceIdx = 0;
+  isPlaying = false;
+  isPaused  = false;
+  pauseSleepTimer();
+
+  // Clear any existing highlight without touching the DOM structure
+  const dp = document.getElementById('spokn-display');
+  dp?.querySelectorAll<HTMLElement>('.reader-word-active').forEach(el => {
+    el.classList.remove('reader-word-active');
+    el.style.background = '';
+    el.style.color = '';
+  });
+
+  // Small delay so the speech engine fully settles after cancel before we
+  // start a new utterance — prevents the "interrupted" error on some browsers
+  setTimeout(() => {
+    wordIndex = idx;
+    updateButtons();
+    updateProgress();
+    playFrom(idx);
+  }, 80);
 }
 
 function exitReadingMode(): void {
@@ -550,7 +1010,14 @@ function playFrom(startIdx: number): void {
   isPlaying = true;
   isPaused  = false;
   wordIndex = startIdx;
-  enterReadingMode();
+
+  // Only rebuild the reading display if we're not already in reading mode.
+  // When seeking by word-click the display is already live — rebuilding it
+  // causes the flash/scroll-to-top bug.
+  const dp = document.getElementById('spokn-display');
+  const alreadyInReadingMode = dp?.style.display !== 'none' && dp !== null;
+  if (!alreadyInReadingMode) enterReadingMode();
+
   startSleepTimer();
 
   const chunks = chunkWords(words.slice(startIdx));
@@ -743,6 +1210,8 @@ function loadText(text: string, append = false): void {
     fullText = fullText + '\n\n' + trimmed;
   } else {
     fullText = trimmed;
+    // New text replaces any active library item
+    if (!append) { activeLibraryItemId = null; saveStoredSettings({ activeLibraryItemId: null }); }
   }
   words    = buildWords(fullText);
   wordIndex = 0;
@@ -753,6 +1222,9 @@ function loadText(text: string, append = false): void {
   if (fullText) setStatus(append && trimmed ? `Appended — ${words.length} words total` : `${words.length} words loaded — ready to play`, 'success');
   else          setStatus('Paste text or load a PDF to get started');
   persistText(fullText);
+  // Update save button
+  const saveBtn = document.getElementById('btn-save-to-library') as HTMLButtonElement | null;
+  if (saveBtn) saveBtn.disabled = !fullText.trim();
 }
 
 // ─── PDF loading ──────────────────────────────────────────────────────────────
@@ -975,26 +1447,15 @@ async function applySettings(s: ReaderSettings): Promise<void> {
   volume            = s.volume;
   autoScroll        = s.autoScroll;
   highlightThemeId  = s.highlightTheme;
+  readingThemeId    = s.readingTheme ?? DEFAULT_SETTINGS.readingTheme;
+  userFontSize      = s.fontSize ?? DEFAULT_SETTINGS.fontSize;
+  userFontFamily    = s.fontFamily ?? DEFAULT_SETTINGS.fontFamily;
   sleepTimerMinutes = s.sleepTimerMinutes;
   favoriteVoices    = s.favoriteVoices;
   if (s.voiceName) selectedVoice = s.voiceName;
 
-  // Restore saved text
-  if (s.text) {
-    fullText = s.text;
-    words    = buildWords(fullText);
-    const ta = $<HTMLTextAreaElement>('#text-input');
-    if (ta) ta.value = fullText;
-    // Restore position — only show banner if meaningfully into the text (>2%)
-    const savedIdx = Math.min(s.wordIndex ?? 0, Math.max(0, words.length - 1));
-    wordIndex = savedIdx;
-    updateButtons();
-    updateProgress();
-    setStatus(`${words.length} words — ready to play`, 'success');
-    if (savedIdx > 0 && words.length > 0 && (savedIdx / words.length) > 0.02) {
-      showResumeBanner(savedIdx, words.length);
-    }
-  }
+  // Restore active library item id so the library panel highlights the right card
+  activeLibraryItemId = s.activeLibraryItemId ?? null;
 
   syncSlider('#rate-input',   rate,   0.5, 3.0);
   syncSlider('#pitch-input',  pitch,  0.5, 2.0);
@@ -1019,6 +1480,9 @@ async function applySettings(s: ReaderSettings): Promise<void> {
     el.classList.toggle('theme-swatch-active', el.dataset.theme === highlightThemeId);
   });
 
+  // Reading theme
+  applyReadingTheme(readingThemeId);
+
   // Sleep timer presets
   document.querySelectorAll<HTMLButtonElement>('.sleep-preset-btn').forEach(btn => {
     const m = parseInt(btn.dataset.sleep ?? '0', 10);
@@ -1032,12 +1496,17 @@ async function saveAllSettings(): Promise<void> {
     voiceName: selectedVoice,
     rate, pitch, volume, autoScroll,
     highlightTheme: highlightThemeId,
+    readingTheme: readingThemeId,
+    fontSize: userFontSize,
+    fontFamily: userFontFamily,
     sleepTimerMinutes,
     favoriteVoices,
-    text: fullText,
     wordIndex,
+    activeLibraryItemId,
   };
   await saveStoredSettings(s);
+  // Also persist text separately (belt-and-suspenders flush)
+  await saveStoredText(fullText).catch(() => {});
   showToast('Settings saved');
 }
 
@@ -1108,7 +1577,20 @@ function showResumeBanner(idx: number, total: number): void {
   document.getElementById('resume-btn-dismiss')?.addEventListener('click', dismiss);
 }
 
-const KOFI_URL = import.meta.env.VITE_KOFI_URL as string ?? 'https://ko-fi.com/adham_tarek';
+const KOFI_URL  = import.meta.env.VITE_KOFI_URL  as string ?? 'https://ko-fi.com/adham_tarek';
+const STORE_URL = import.meta.env.VITE_STORE_URL as string ?? 'https://chromewebstore.google.com/detail/spokn-offline-text-to-spe/kgpbmfedaaagllbdnhpcgpbhoehhiibe';
+
+function shareExtension(): void {
+  const text = `I've been using Spokn to listen to any webpage or document — 100% offline, no sign-up. Check it out:`;
+  const url  = STORE_URL;
+  if (navigator.share) {
+    navigator.share({ title: 'Spokn — Offline Text to Speech', text, url }).catch(() => {});
+  } else {
+    navigator.clipboard.writeText(`${text}\n${url}`).then(() => {
+      showToast('Link copied to clipboard!');
+    }).catch(() => showToast('Copy failed — ' + url));
+  }
+}
 
 function showTipBanner(): void {
   if (document.getElementById('tip-banner')) return;
@@ -1146,6 +1628,154 @@ function showTipBanner(): void {
   setTimeout(dismiss, 20000);
 }
 
+// ─── Library UI helpers ───────────────────────────────────────────────────────
+
+function formatRelativeDate(ts: number): string {
+  const diff = Date.now() - ts;
+  const m = Math.floor(diff / 60000);
+  if (m < 1)   return 'just now';
+  if (m < 60)  return `${m}m ago`;
+  const h = Math.floor(m / 60);
+  if (h < 24)  return `${h}h ago`;
+  const d = Math.floor(h / 24);
+  if (d < 7)   return `${d}d ago`;
+  return new Date(ts).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+}
+
+function renderLibrary(): void {
+  const list    = document.getElementById('library-list');
+  const empty   = document.getElementById('library-empty');
+  const badge   = document.getElementById('library-count-badge');
+  if (!list || !empty) return;
+
+  // Update badge
+  if (badge) {
+    if (libraryItems.length > 0) {
+      badge.textContent = String(libraryItems.length);
+      badge.style.display = 'flex';
+    } else {
+      badge.style.display = 'none';
+    }
+  }
+
+  if (libraryItems.length === 0) {
+    list.innerHTML  = '';
+    list.style.display  = 'none';
+    empty.style.display = 'flex';
+    return;
+  }
+
+  list.style.display  = 'block';
+  empty.style.display = 'none';
+  list.innerHTML = '';
+
+  for (const item of libraryItems) {
+    const pct      = item.wordCount > 0 ? Math.round((item.wordIndex / item.wordCount) * 100) : 0;
+    const isActive = item.id === activeLibraryItemId;
+    const card     = document.createElement('div');
+    card.className = 'lib-card' + (isActive ? ' lib-card-active' : '');
+    card.dataset.id = item.id;
+    card.innerHTML = `
+      <div class="lib-card-header">
+        <span class="lib-card-title" title="${item.title.replace(/"/g, '&quot;')}">${item.title}</span>
+        <button class="lib-card-delete" data-id="${item.id}" aria-label="Delete ${item.title}" title="Remove from library">
+          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+      </div>
+      <div class="lib-card-meta">
+        <span class="lib-card-words">${item.wordCount.toLocaleString()} words</span>
+        <span class="lib-card-dot">·</span>
+        <span class="lib-card-date">${formatRelativeDate(item.savedAt)}</span>
+      </div>
+      <div class="lib-progress-track">
+        <div class="lib-progress-bar" style="width:${pct}%"></div>
+      </div>
+      <div class="lib-card-pct">${pct > 0 ? `${pct}% read` : 'Not started'}</div>
+    `;
+
+    // Load on card click (but not delete button)
+    card.addEventListener('click', (e) => {
+      if ((e.target as HTMLElement).closest('.lib-card-delete')) return;
+      loadLibraryItem(item);
+    });
+
+    // Delete
+    card.querySelector<HTMLButtonElement>('.lib-card-delete')?.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      await libraryDeleteItem(item.id);
+      libraryItems = await loadLibrary();
+      if (activeLibraryItemId === item.id) {
+        activeLibraryItemId = null;
+        saveStoredSettings({ activeLibraryItemId: null });
+      }
+      renderLibrary();
+    });
+
+    list.appendChild(card);
+  }
+}
+
+function loadLibraryItem(item: LibraryItem): void {
+  // Stop playback cleanly first
+  if (isPlaying || isPaused) stopAll(false);
+
+  activeLibraryItemId = item.id;
+  saveStoredSettings({ activeLibraryItemId });
+
+  // Load text from its own storage key (it's no longer in the index)
+  libraryLoadText(item.id).then(text => {
+    fullText  = text;
+    words     = buildWords(fullText);
+    wordIndex = Math.min(item.wordIndex, Math.max(0, words.length - 1));
+
+    const ta = document.getElementById('text-input') as HTMLTextAreaElement | null;
+    if (ta) ta.value = fullText;
+
+    // Ensure we're in edit mode so the textarea is visible
+    const dp = document.getElementById('spokn-display');
+    if (dp && dp.style.display !== 'none') exitReadingMode();
+
+    updateButtons();
+    updateProgress();
+    setStatus(`${words.length.toLocaleString()} words — ready to play`, 'success');
+
+    // Show resume banner if meaningfully into the text
+    if (wordIndex > 0 && words.length > 0 && (wordIndex / words.length) > 0.02) {
+      showResumeBanner(wordIndex, words.length);
+    }
+
+    // Update save button state
+    const saveBtn = document.getElementById('btn-save-to-library') as HTMLButtonElement | null;
+    if (saveBtn) saveBtn.disabled = false;
+
+    renderLibrary(); // refresh active highlight
+    closeLibraryDrawer();
+    showToast(`Loaded "${item.title}"`);
+  }).catch(() => {
+    showToast('Failed to load item — storage error');
+  });
+}
+
+function openLibraryDrawer(): void {
+  libraryDrawerOpen = true;
+  const drawer   = document.getElementById('library-drawer');
+  const backdrop = document.getElementById('library-backdrop');
+  const openBtn  = document.getElementById('btn-library-open');
+  drawer?.classList.add('lib-drawer-open');
+  backdrop?.classList.add('lib-backdrop-visible');
+  openBtn?.setAttribute('aria-expanded', 'true');
+}
+
+function closeLibraryDrawer(): void {
+  libraryDrawerOpen = false;
+  const drawer   = document.getElementById('library-drawer');
+  const backdrop = document.getElementById('library-backdrop');
+  const openBtn  = document.getElementById('btn-library-open');
+  drawer?.classList.remove('lib-drawer-open');
+  backdrop?.classList.remove('lib-backdrop-visible');
+  openBtn?.setAttribute('aria-expanded', 'false');
+}
+
 // ─── Build UI ─────────────────────────────────────────────────────────────────
 
 const SPEED_PRESETS = [0.5, 0.8, 1.0, 1.5, 2.0, 2.5, 3.0];
@@ -1158,10 +1788,16 @@ function buildUI(): void {
           <img src="${chrome.runtime.getURL('icons/icon48.png')}" alt="Spokn" width="28" height="28" />
           <span>Spokn <span class="reader-subtitle">Reader</span></span>
         </div>
-        <a href="${KOFI_URL}" target="_blank" rel="noopener noreferrer" class="header-kofi-btn" title="Support Spokn on Ko-fi">
-          <img src="${chrome.runtime.getURL('kofi.png')}" alt="" class="header-kofi-logo" />
-          Support me on Ko-fi
-        </a>
+        <div class="header-actions-group">
+          <a href="${KOFI_URL}" target="_blank" rel="noopener noreferrer" class="header-kofi-btn" title="Support Spokn on Ko-fi">
+            <img src="${chrome.runtime.getURL('kofi.png')}" alt="" class="header-kofi-logo" />
+            Support me on Ko-fi
+          </a>
+          <button id="reader-share-btn" class="header-share-btn" title="Share Spokn with friends">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>
+            Share
+          </button>
+        </div>
         <a href="#" id="reader-back-link" class="back-link">← Back to browsing</a>
       </header>
 
@@ -1172,9 +1808,18 @@ function buildUI(): void {
           <div class="panel-header">
             <h2 class="panel-title" id="panel-title">Your Text</h2>
             <div class="panel-actions" id="panel-actions-edit">
-              <button id="btn-load-pdf" class="action-btn">
+              <button id="btn-library-open" class="action-btn action-btn-lib" title="Open saved library" aria-expanded="false" aria-controls="library-drawer">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>
+                Library
+                <span id="library-count-badge" class="lib-count-badge" style="display:none"></span>
+              </button>
+              <button id="btn-load-pdf" class="action-btn action-btn-lib">
                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
-                Load PDF / File
+                <span class="btn-label-full">Load PDF / File</span><span class="btn-label-short">Import</span>
+              </button>
+              <button id="btn-save-to-library" class="action-btn action-btn-lib" title="Save current text to library" disabled>
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
+                Save
               </button>
               <button id="btn-clear" class="action-btn action-btn-ghost">Clear</button>
               <input id="file-input" type="file" accept=".pdf,.txt,.md,.csv" style="display:none" />
@@ -1220,6 +1865,53 @@ function buildUI(): void {
 
           <!-- Settings -->
           <div class="settings-block">
+
+            <div class="settings-section-title">Reading Theme</div>
+            <div class="reading-theme-swatches reading-theme-swatches-top">
+              ${READING_THEMES.map(t => `
+                <button
+                  class="reading-theme-swatch${t.id === readingThemeId ? ' reading-theme-swatch-active' : ''}"
+                  data-reading-theme="${t.id}"
+                  title="${t.label}"
+                  style="--rt-swatch:${t.swatch};--rt-color:${t.color}"
+                  aria-label="${t.label} reading theme"
+                ><span class="rt-swatch-label">${t.label}</span></button>
+              `).join('')}
+            </div>
+            <div class="setting-row font-size-row">
+              <label class="setting-label" for="font-size-val">Font Size</label>
+              <div class="font-size-stepper">
+                <button id="font-size-dec" class="font-size-btn" aria-label="Decrease font size" ${getActiveFontSize() <= FONT_SIZE_MIN ? 'disabled' : ''}>−</button>
+                <span id="font-size-val" class="font-size-val">${getActiveFontSize()}px</span>
+                <button id="font-size-inc" class="font-size-btn" aria-label="Increase font size" ${getActiveFontSize() >= FONT_SIZE_MAX ? 'disabled' : ''}>+</button>
+                <button id="font-size-reset" class="font-size-reset" title="Reset to theme default" aria-label="Reset font size to theme default">↺</button>
+              </div>
+            </div>
+            <div class="setting-row font-family-row">
+              <label class="setting-label">Font</label>
+              <div class="font-family-pills">
+                ${FONT_FAMILIES.map(f => {
+                  const activeFam = userFontFamily || (READING_THEMES.find(t => t.id === readingThemeId)?.fontFamily ?? '');
+                  const isActive  = activeFam === f.stack;
+                  return `<button
+                    class="font-family-pill${isActive ? ' font-family-pill-active' : ''}"
+                    data-font-family="${f.id}"
+                    data-font-stack="${f.stack}"
+                    title="${f.stack}"
+                    aria-label="${f.label} font"
+                    style="font-family:${f.stack}"
+                  >${f.label}</button>`;
+                }).join('')}
+              </div>
+            </div>
+            <div class="setting-row">
+              <label class="setting-label">Scroll</label>
+              <label class="toggle-wrap">
+                <input type="checkbox" id="autoscroll-toggle" ${autoScroll ? 'checked' : ''} />
+                <span class="toggle-track"><span class="toggle-thumb"></span></span>
+                <span class="toggle-label">Auto-scroll with reading</span>
+              </label>
+            </div>
 
             <div class="settings-section-title">Voice</div>
             <div class="voice-picker">
@@ -1292,16 +1984,6 @@ function buildUI(): void {
               </div>
             </div>
 
-            <div class="settings-section-title">Reading</div>
-            <div class="setting-row">
-              <label class="setting-label">Scroll</label>
-              <label class="toggle-wrap">
-                <input type="checkbox" id="autoscroll-toggle" ${autoScroll ? 'checked' : ''} />
-                <span class="toggle-track"><span class="toggle-thumb"></span></span>
-                <span class="toggle-label">Auto-scroll with reading</span>
-              </label>
-            </div>
-
           </div>
 
           <!-- Save / Reset -->
@@ -1313,6 +1995,26 @@ function buildUI(): void {
         </section>
       </main>
     </div>
+
+    <!-- Library drawer -->
+    <div id="library-drawer" class="lib-drawer" aria-label="Library" role="complementary">
+      <div class="lib-drawer-header">
+        <span class="lib-drawer-title">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>
+          Library
+        </span>
+        <button id="btn-library-close" class="lib-close-btn" aria-label="Close library">✕</button>
+      </div>
+      <div id="library-list" class="lib-list">
+        <!-- items rendered by renderLibrary() -->
+      </div>
+      <div id="library-empty" class="lib-empty" style="display:none">
+        <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.2)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>
+        <p>No saved items yet.</p>
+        <p class="lib-empty-hint">Load some text then hit <strong>Save</strong> to add it here.</p>
+      </div>
+    </div>
+    <div id="library-backdrop" class="lib-backdrop"></div>
   `;
 }
 
@@ -1325,6 +2027,10 @@ function attachListeners(): void {
     updateButtons(); updateProgress();
     setStatus(fullText.trim() ? `${words.length} words` : 'Paste text or load a PDF to get started');
     persistText(fullText);
+    // Clear active library item when user manually edits, update save button state
+    if (activeLibraryItemId) { activeLibraryItemId = null; saveStoredSettings({ activeLibraryItemId: null }); }
+    const saveBtn = document.getElementById('btn-save-to-library') as HTMLButtonElement | null;
+    if (saveBtn) saveBtn.disabled = !fullText.trim();
   });
 
   $<HTMLButtonElement>('#btn-playpause').addEventListener('click', () => {
@@ -1455,6 +2161,46 @@ function attachListeners(): void {
     });
   });
 
+  // Reading theme
+  document.querySelectorAll<HTMLButtonElement>('.reading-theme-swatch').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const id = btn.dataset.readingTheme;
+      if (!id) return;
+      applyReadingTheme(id);
+    });
+  });
+
+  // Font size stepper
+  document.getElementById('font-size-dec')?.addEventListener('click', () => {
+    applyFontSize(getActiveFontSize() - 1);
+  });
+  document.getElementById('font-size-inc')?.addEventListener('click', () => {
+    applyFontSize(getActiveFontSize() + 1);
+  });
+  document.getElementById('font-size-reset')?.addEventListener('click', () => {
+    userFontSize = 0;
+    // Re-apply the current theme so font snaps back to its natural default
+    applyReadingTheme(readingThemeId);
+  });
+
+  // Font family pills
+  document.querySelectorAll<HTMLButtonElement>('.font-family-pill').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const stack = btn.dataset.fontStack ?? '';
+      const id    = btn.dataset.fontFamily ?? '';
+      // If already active and it matches a non-theme font, clicking again resets to theme default
+      if (btn.classList.contains('font-family-pill-active') && userFontFamily) {
+        userFontFamily = '';
+        applyReadingTheme(readingThemeId);
+      } else {
+        applyFontFamily(stack);
+        // Mark the clicked pill active immediately (syncFontFamilyUI will confirm)
+        document.querySelectorAll('.font-family-pill').forEach(p => p.classList.remove('font-family-pill-active'));
+        btn.classList.add('font-family-pill-active');
+      }
+    });
+  });
+
   // Auto-scroll
   $<HTMLInputElement>('#autoscroll-toggle').addEventListener('change', (e) => {
     autoScroll = (e.target as HTMLInputElement).checked;
@@ -1476,8 +2222,60 @@ function attachListeners(): void {
   });
 
   $<HTMLAnchorElement>('#reader-back-link').addEventListener('click', (e) => { e.preventDefault(); window.close(); });
+  document.getElementById('reader-share-btn')?.addEventListener('click', () => shareExtension());
 
-  // Keyboard shortcuts — only active when playing or paused
+  // ── Library ──────────────────────────────────────────────────────────────────
+
+  // Open/close drawer
+  document.getElementById('btn-library-open')?.addEventListener('click', () => {
+    if (libraryDrawerOpen) closeLibraryDrawer(); else openLibraryDrawer();
+  });
+  document.getElementById('btn-library-close')?.addEventListener('click', () => closeLibraryDrawer());
+  document.getElementById('library-backdrop')?.addEventListener('click', () => closeLibraryDrawer());
+
+  // Close drawer on Escape
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && libraryDrawerOpen) { closeLibraryDrawer(); }
+  });
+
+  // Save current text to library
+  document.getElementById('btn-save-to-library')?.addEventListener('click', async () => {
+    if (!fullText.trim()) return;
+    const btn = document.getElementById('btn-save-to-library') as HTMLButtonElement | null;
+    if (btn) { btn.disabled = true; btn.textContent = 'Saving…'; }
+    try {
+      // If this text is already the active library item, just update its progress
+      if (activeLibraryItemId) {
+        await libraryUpdateProgress(activeLibraryItemId, wordIndex);
+        libraryItems = await loadLibrary();
+        renderLibrary();
+        showToast('Progress saved');
+      } else {
+        const item = await librarySaveItem(fullText, wordIndex);
+        activeLibraryItemId = item.id;
+        await saveStoredSettings({ activeLibraryItemId });
+        libraryItems = await loadLibrary();
+        renderLibrary();
+        showToast(`Saved "${item.title}"`);
+      }
+    } catch {
+      // showStorageError was already called inside saveLibrary/librarySaveText;
+      // just restore the button without swallowing the UX.
+    } finally {
+      if (btn) {
+        btn.disabled = false;
+        btn.innerHTML = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg> Save`;
+      }
+    }
+  });
+
+  // Enable/disable save button based on whether there's text
+  $<HTMLTextAreaElement>('#text-input').addEventListener('input', () => {
+    const saveBtn = document.getElementById('btn-save-to-library') as HTMLButtonElement | null;
+    if (saveBtn) saveBtn.disabled = !fullText.trim();
+    // Clear active library item when user manually edits text
+    if (activeLibraryItemId) { activeLibraryItemId = null; saveStoredSettings({ activeLibraryItemId: null }); }
+  });
   document.addEventListener('keydown', (e) => {
     // Don't fire when user is typing in textarea or search
     const tag = (e.target as HTMLElement).tagName;
@@ -1532,8 +2330,9 @@ function injectStyles(): void {
       .reader-header{flex-wrap:wrap;row-gap:10px;padding:14px 0 12px;}
       .reader-logo{order:0;}
       .back-link{order:1;margin-left:auto;}
-      .header-kofi-btn{order:2;width:100%;justify-content:center;}
+      .header-actions-group{order:2;width:100%;justify-content:center;}
     }
+    .header-actions-group{display:flex;align-items:center;gap:8px;}
     .reader-logo{display:flex;align-items:center;gap:10px;font-size:18px;font-weight:700;color:#f0f4ff;}
     .reader-subtitle{color:#0277D4;}
     .back-link{font-size:12px;color:rgba(255,255,255,0.4);text-decoration:none;transition:color .15s;}
@@ -1542,6 +2341,10 @@ function injectStyles(): void {
     .header-kofi-btn:hover{filter:brightness(1.12);transform:translateY(-1px);}
     .header-kofi-btn:active{transform:translateY(0);filter:brightness(0.95);}
     .header-kofi-logo{width:24px;height:24px;object-fit:contain;flex-shrink:0;}
+    .header-share-btn{display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:600;font-family:inherit;color:rgba(255,255,255,0.5);background:transparent;border:1px solid rgba(255,255,255,0.12);border-radius:10px;padding:6px 13px;cursor:pointer;transition:all .15s;white-space:nowrap;flex-shrink:0;}
+    .header-share-btn:hover{color:#e8edf5;border-color:rgba(255,255,255,0.28);background:rgba(255,255,255,0.07);}
+    .header-share-btn:active{transform:scale(.96);}
+    @media(max-width:760px){.header-share-btn{padding:6px 10px;font-size:11px;}}
 
     /* Layout */
     .reader-main{display:grid;grid-template-columns:1fr 320px;gap:24px;flex:1;min-height:0;}
@@ -1558,11 +2361,21 @@ function injectStyles(): void {
     .reader-controls-panel{display:flex;flex-direction:column;gap:14px;min-height:0;overflow-y:auto;scrollbar-width:none;}
     @media(max-width:760px){.reader-controls-panel{overflow-y:visible;min-height:unset;}}
 
+    /* Responsive button label: show short version on mobile */
+    .btn-label-short{display:none;}
+    .btn-label-full{display:inline;}
+    @media(max-width:760px){
+      .btn-label-full{display:none;}
+      .btn-label-short{display:inline;}
+      .panel-actions{gap:5px;}
+      .action-btn{padding:6px 10px;font-size:11px;}
+    }
+
     /* Header row */
-    .panel-header{display:flex;align-items:center;justify-content:space-between;}
-    .panel-title{font-size:11px;font-weight:700;color:rgba(255,255,255,0.4);text-transform:uppercase;letter-spacing:.1em;}
-    .panel-actions{display:flex;align-items:center;gap:8px;}
-    .action-btn{display:inline-flex;align-items:center;gap:5px;padding:6px 12px;background:#0277D4;color:#fff;border:none;border-radius:8px;font-size:12px;font-weight:600;font-family:inherit;cursor:pointer;transition:filter .15s,transform .08s;}
+    .panel-header{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;}
+    .panel-title{font-size:11px;font-weight:700;color:rgba(255,255,255,0.4);text-transform:uppercase;letter-spacing:.1em;flex-shrink:0;}
+    .panel-actions{display:flex;align-items:center;gap:6px;flex-wrap:wrap;}
+    .action-btn{display:inline-flex;align-items:center;gap:5px;padding:6px 12px;background:#0277D4;color:#fff;border:none;border-radius:8px;font-size:12px;font-weight:600;font-family:inherit;cursor:pointer;white-space:nowrap;transition:filter .15s,transform .08s;}
     .action-btn:hover{filter:brightness(1.15);}
     .action-btn:active{transform:scale(.96);}
     .action-btn-ghost{background:transparent;border:1px solid rgba(255,255,255,0.12);color:rgba(255,255,255,0.5);}
@@ -1578,14 +2391,14 @@ function injectStyles(): void {
     .time-remaining svg{flex-shrink:0;opacity:.6;width:10px;height:10px;}
 
     /* Textarea — custom scrollbar matching design */
-    #text-input{flex:1;min-height:0;resize:none;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.08);border-radius:12px;color:#e8edf5;font-size:15px;font-family:inherit;line-height:1.75;padding:16px;outline:none;transition:border-color .15s;overflow-y:auto;scrollbar-width:thin;scrollbar-color:rgba(255,255,255,0.15) transparent;}
+    #text-input{flex:1;min-height:0;resize:none;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.08);border-radius:12px;color:#e8edf5;font-size:15px;font-family:inherit;line-height:1.75;padding:16px;outline:none;transition:border-color .15s;overflow-y:auto;scrollbar-width:thin;scrollbar-color:var(--ta-scrollbar,rgba(255,255,255,0.15)) transparent;}
     @media(max-width:760px){#text-input{flex:none;height:240px;}}
     #text-input::-webkit-scrollbar{width:4px;}
     #text-input::-webkit-scrollbar-track{background:transparent;}
-    #text-input::-webkit-scrollbar-thumb{background:rgba(255,255,255,0.15);border-radius:4px;}
-    #text-input::-webkit-scrollbar-thumb:hover{background:rgba(255,255,255,0.28);}
+    #text-input::-webkit-scrollbar-thumb{background:var(--ta-scrollbar,rgba(255,255,255,0.15));border-radius:4px;}
+    #text-input::-webkit-scrollbar-thumb:hover{background:var(--ta-scrollbar-hover,rgba(255,255,255,0.28));}
     #text-input:focus{border-color:rgba(2,119,212,0.5);}
-    #text-input::placeholder{color:rgba(255,255,255,0.2);}
+    #text-input::placeholder{color:var(--ta-placeholder,rgba(255,255,255,0.2));}
 
     /* Reading display */
     .spokn-display {
@@ -1602,11 +2415,12 @@ function injectStyles(): void {
       padding: 16px;
       word-break: break-word;
       scrollbar-width: thin;
-      scrollbar-color: rgba(255,255,255,0.1) transparent;
+      scrollbar-color: var(--spokn-scrollbar-thumb, rgba(255,255,255,0.1)) transparent;
       cursor: default;
     }
     .spokn-display::-webkit-scrollbar{width:4px;}
-    .spokn-display::-webkit-scrollbar-thumb{background:rgba(255,255,255,0.1);border-radius:4px;}
+    .spokn-display::-webkit-scrollbar-thumb{background:var(--spokn-scrollbar-thumb,rgba(255,255,255,0.1));border-radius:4px;}
+    .spokn-display::-webkit-scrollbar-track{background:transparent;}
     .reader-word{border-radius:3px;padding:0 1px;cursor:pointer;transition:background .08s,color .08s;}
     .reader-word:hover{background:var(--theme-hover-bg,rgba(255,255,255,0.1));color:var(--theme-hover-color,inherit);}
     .reader-word-active{border-radius:3px;padding:0 1px;font-weight:600;}
@@ -1738,6 +2552,143 @@ function injectStyles(): void {
     .theme-swatch[data-theme="none"]{background:rgba(255,255,255,0.06);border:2px solid rgba(255,255,255,0.15);position:relative;}
     .theme-swatch[data-theme="none"]::after{content:'';position:absolute;inset:0;margin:auto;width:7px;height:2px;background:rgba(255,255,255,0.4);border-radius:2px;}
 
+    /* Reading theme swatches */
+    .reading-theme-row{align-items:flex-start;}
+    .reading-theme-swatches{display:flex;gap:5px;flex-wrap:wrap;flex:1;}
+    .reading-theme-swatches-top{display:flex;gap:7px;flex-wrap:wrap;padding-bottom:2px;}
+    .reading-theme-swatch{
+      all:unset;
+      display:flex;
+      flex-direction:column;
+      align-items:center;
+      justify-content:flex-end;
+      width:44px;
+      height:30px;
+      border-radius:7px;
+      background:var(--rt-swatch);
+      cursor:pointer;
+      border:2px solid transparent;
+      transition:transform .12s,border-color .12s,box-shadow .12s;
+      box-shadow:0 1px 4px rgba(0,0,0,0.35);
+      flex-shrink:0;
+      overflow:hidden;
+      position:relative;
+      padding-bottom:3px;
+    }
+    /* Larger variant when rendered at the top (full-width section) */
+    .reading-theme-swatches-top .reading-theme-swatch{
+      width:60px;
+      height:40px;
+      border-radius:9px;
+    }
+    .reading-theme-swatch::before{
+      content:'';
+      position:absolute;
+      top:4px;left:6px;right:6px;
+      height:3px;
+      border-radius:2px;
+      background:var(--rt-color);
+      opacity:.45;
+    }
+    .reading-theme-swatch::after{
+      content:'';
+      position:absolute;
+      top:11px;left:6px;right:14px;
+      height:3px;
+      border-radius:2px;
+      background:var(--rt-color);
+      opacity:.25;
+    }
+    .rt-swatch-label{
+      position:relative;
+      z-index:1;
+      font-size:8px;
+      font-weight:700;
+      letter-spacing:.04em;
+      color:var(--rt-color);
+      opacity:.7;
+      text-transform:uppercase;
+      pointer-events:none;
+      line-height:1;
+    }
+    .reading-theme-swatch:hover{transform:scale(1.07);box-shadow:0 3px 10px rgba(0,0,0,0.45);}
+    .reading-theme-swatch-active{border-color:#0277D4;box-shadow:0 0 0 1px #0277D4,0 3px 10px rgba(2,119,212,0.35);transform:scale(1.05);}
+    .reading-theme-swatch-active .rt-swatch-label{opacity:1;}
+
+    /* Font size stepper */
+    .font-size-row{align-items:center;margin-top:2px;}
+    .font-size-stepper{display:flex;align-items:center;gap:4px;flex:1;}
+    .font-size-btn{
+      all:unset;
+      width:24px;height:24px;
+      display:flex;align-items:center;justify-content:center;
+      border-radius:6px;
+      background:rgba(255,255,255,0.07);
+      color:rgba(255,255,255,0.8);
+      font-size:16px;line-height:1;
+      cursor:pointer;
+      transition:background .12s,color .12s;
+      flex-shrink:0;
+      user-select:none;
+    }
+    .font-size-btn:hover:not(:disabled){background:rgba(255,255,255,0.13);color:#fff;}
+    .font-size-btn:disabled{opacity:.3;cursor:not-allowed;}
+    .font-size-val{
+      min-width:38px;
+      text-align:center;
+      font-size:12px;
+      font-weight:600;
+      color:rgba(255,255,255,0.75);
+      letter-spacing:.02em;
+      flex-shrink:0;
+    }
+    .font-size-reset{
+      all:unset;
+      margin-left:4px;
+      width:20px;height:20px;
+      display:flex;align-items:center;justify-content:center;
+      border-radius:5px;
+      background:transparent;
+      color:rgba(255,255,255,0.3);
+      font-size:13px;
+      cursor:pointer;
+      transition:color .12s,background .12s;
+      flex-shrink:0;
+    }
+    .font-size-reset:hover{color:rgba(255,255,255,0.7);background:rgba(255,255,255,0.07);}
+
+    /* Font family pills */
+    .font-family-row{align-items:flex-start;margin-top:1px;}
+    .font-family-pills{display:flex;flex-wrap:wrap;gap:5px;flex:1;}
+    .font-family-pill{
+      all:unset;
+      padding:3px 9px;
+      border-radius:20px;
+      font-size:11px;
+      line-height:1.4;
+      cursor:pointer;
+      border:1.5px solid rgba(255,255,255,0.1);
+      color:rgba(255,255,255,0.55);
+      background:rgba(255,255,255,0.04);
+      transition:border-color .12s,color .12s,background .12s;
+      white-space:nowrap;
+      user-select:none;
+    }
+    .font-family-pill:hover{
+      border-color:rgba(255,255,255,0.25);
+      color:rgba(255,255,255,0.85);
+      background:rgba(255,255,255,0.08);
+    }
+    .font-family-pill-active{
+      border-color:#0277D4;
+      color:#4db8ff;
+      background:rgba(2,119,212,0.12);
+    }
+    .font-family-pill-active:hover{
+      border-color:#1a8ae8;
+      background:rgba(2,119,212,0.2);
+    }
+
     /* Toggle */
     .toggle-wrap{display:flex;align-items:center;gap:8px;cursor:pointer;flex:1;}
     .toggle-wrap input[type=checkbox]{position:absolute;opacity:0;width:0;height:0;}
@@ -1757,6 +2708,146 @@ function injectStyles(): void {
     /* Toast */
     #reader-toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%) translateY(12px);background:#1b1c1f;border:1px solid rgba(255,255,255,0.1);color:#e8edf5;font-size:12px;font-family:inherit;padding:8px 18px;border-radius:10px;box-shadow:0 4px 16px rgba(0,0,0,0.4);opacity:0;transition:opacity .2s,transform .2s;pointer-events:none;white-space:nowrap;}
     #reader-toast.toast-visible{opacity:1;transform:translateX(-50%) translateY(0);}
+
+    /* ── Library button (settings actions row) ── */
+    .library-btn{
+      display:inline-flex;align-items:center;gap:6px;
+      padding:8px 14px;border-radius:10px;
+      background:rgba(255,255,255,0.06);
+      border:1px solid rgba(255,255,255,0.1);
+      color:rgba(255,255,255,0.6);
+      font-size:12px;font-weight:600;font-family:inherit;
+      cursor:pointer;transition:all .15s;
+      position:relative;
+      flex-shrink:0;
+    }
+    .library-btn:hover{background:rgba(255,255,255,0.11);border-color:rgba(255,255,255,0.22);color:#e8edf5;}
+    .library-btn[aria-expanded="true"]{background:rgba(2,119,212,0.15);border-color:rgba(2,119,212,0.4);color:#4db8ff;}
+    .lib-count-badge{
+      display:flex;align-items:center;justify-content:center;
+      min-width:16px;height:16px;padding:0 4px;
+      border-radius:99px;background:#0277D4;
+      color:#fff;font-size:9px;font-weight:700;line-height:1;
+    }
+
+    /* ── Save button variant ── */
+    .action-btn-lib{background:rgba(255,255,255,0.07);border:1px solid rgba(255,255,255,0.12);color:rgba(255,255,255,0.6);}
+    .action-btn-lib:hover:not(:disabled){background:rgba(255,255,255,0.12);border-color:rgba(255,255,255,0.25);color:#e8edf5;filter:none;}
+    .action-btn-lib:disabled{opacity:.35;cursor:not-allowed;}
+    .action-btn-lib[aria-expanded="true"]{background:rgba(2,119,212,0.15);border-color:rgba(2,119,212,0.4);color:#4db8ff;}
+
+    /* ── Backdrop ── */
+    .lib-backdrop{
+      position:fixed;inset:0;z-index:199;
+      background:rgba(0,0,0,0.45);
+      opacity:0;pointer-events:none;
+      transition:opacity .25s;
+    }
+    .lib-backdrop-visible{opacity:1;pointer-events:auto;}
+
+    /* ── Drawer ── */
+    .lib-drawer{
+      position:fixed;top:0;left:0;bottom:0;
+      width:320px;max-width:90vw;
+      z-index:200;
+      background:#13151a;
+      border-right:1px solid rgba(255,255,255,0.08);
+      box-shadow:4px 0 32px rgba(0,0,0,0.55);
+      display:flex;flex-direction:column;
+      transform:translateX(-100%);
+      transition:transform .25s cubic-bezier(.4,0,.2,1);
+      will-change:transform;
+    }
+    .lib-drawer-open{transform:translateX(0);}
+
+    /* drawer header */
+    .lib-drawer-header{
+      display:flex;align-items:center;justify-content:space-between;
+      padding:18px 16px 14px;
+      border-bottom:1px solid rgba(255,255,255,0.07);
+      flex-shrink:0;
+    }
+    .lib-drawer-title{
+      display:flex;align-items:center;gap:7px;
+      font-size:13px;font-weight:700;color:#e8edf5;letter-spacing:.01em;
+    }
+    .lib-close-btn{
+      all:unset;
+      width:24px;height:24px;
+      display:flex;align-items:center;justify-content:center;
+      border-radius:6px;
+      color:rgba(255,255,255,0.35);
+      font-size:13px;cursor:pointer;
+      transition:color .12s,background .12s;
+    }
+    .lib-close-btn:hover{color:#e8edf5;background:rgba(255,255,255,0.07);}
+
+    /* drawer list */
+    .lib-list{
+      flex:1;overflow-y:auto;
+      padding:10px 10px 16px;
+      display:flex !important;flex-direction:column;gap:8px;
+      scrollbar-width:thin;scrollbar-color:rgba(255,255,255,0.1) transparent;
+    }
+    .lib-list::-webkit-scrollbar{width:3px;}
+    .lib-list::-webkit-scrollbar-thumb{background:rgba(255,255,255,0.1);border-radius:3px;}
+
+    /* empty state */
+    .lib-empty{
+      flex:1;display:flex;flex-direction:column;
+      align-items:center;justify-content:center;
+      gap:10px;padding:32px 24px;
+      text-align:center;
+    }
+    .lib-empty p{font-size:12px;color:rgba(255,255,255,0.3);line-height:1.5;}
+    .lib-empty-hint{font-size:11px!important;color:rgba(255,255,255,0.2)!important;}
+    .lib-empty-hint strong{color:rgba(255,255,255,0.35);}
+
+    /* ── Library card ── */
+    .lib-card{
+      background:rgba(255,255,255,0.04);
+      border:1px solid rgba(255,255,255,0.07);
+      border-radius:10px;
+      padding:11px 12px 10px;
+      cursor:pointer;
+      transition:background .12s,border-color .12s,transform .08s;
+    }
+    .lib-card:hover{background:rgba(255,255,255,0.07);border-color:rgba(255,255,255,0.13);}
+    .lib-card:active{transform:scale(.99);}
+    .lib-card-active{
+      background:rgba(2,119,212,0.1)!important;
+      border-color:rgba(2,119,212,0.35)!important;
+    }
+
+    .lib-card-header{display:flex;align-items:flex-start;justify-content:space-between;gap:6px;margin-bottom:4px;}
+    .lib-card-title{
+      font-size:12px;font-weight:600;color:#d4dae8;
+      line-height:1.4;
+      /* clamp to 2 lines */
+      display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;
+      flex:1;
+    }
+    .lib-card-delete{
+      all:unset;
+      flex-shrink:0;
+      width:20px;height:20px;
+      display:flex;align-items:center;justify-content:center;
+      border-radius:5px;
+      color:rgba(255,255,255,0.2);
+      cursor:pointer;
+      transition:color .12s,background .12s;
+      margin-top:1px;
+    }
+    .lib-card-delete:hover{color:#f87171;background:rgba(248,113,113,0.1);}
+
+    .lib-card-meta{display:flex;align-items:center;gap:4px;margin-bottom:7px;}
+    .lib-card-words{font-size:10px;color:rgba(255,255,255,0.3);}
+    .lib-card-dot{font-size:10px;color:rgba(255,255,255,0.15);}
+    .lib-card-date{font-size:10px;color:rgba(255,255,255,0.25);}
+
+    .lib-progress-track{height:2px;background:rgba(255,255,255,0.07);border-radius:99px;overflow:hidden;margin-bottom:4px;}
+    .lib-progress-bar{height:100%;background:#0277D4;border-radius:99px;transition:width .3s;}
+    .lib-card-pct{font-size:9px;font-weight:600;color:rgba(2,119,212,0.7);letter-spacing:.03em;text-transform:uppercase;}
 
     /* Resume banner */
     #resume-banner{display:flex;align-items:center;gap:10px;padding:10px 30px 10px 14px;background:rgba(2,119,212,0.1);border:1px solid rgba(2,119,212,0.3);border-radius:10px;opacity:0;transform:translateY(-6px);transition:opacity .22s,transform .22s;position:relative;}
@@ -1799,7 +2890,53 @@ buildUI();
 attachListeners();
 
 loadStoredSettings().then(s => {
-  return applySettings(s).then(() => {
+  return applySettings(s).then(async () => {
+    // Run one-time migration for old inline-text library format
+    await migrateLibraryIfNeeded();
+
+    // Load library items into memory and render the badge
+    libraryItems = await loadLibrary();
+    renderLibrary();
+
+    // Restore editor text from its own key (separate from settings)
+    const storedText = await loadStoredText();
+    if (storedText) {
+      fullText = storedText;
+      words    = buildWords(fullText);
+      const ta = $<HTMLTextAreaElement>('#text-input');
+      if (ta) ta.value = fullText;
+      const savedIdx = Math.min(s.wordIndex ?? 0, Math.max(0, words.length - 1));
+      wordIndex = savedIdx;
+      updateButtons();
+      updateProgress();
+      setStatus(`${words.length} words — ready to play`, 'success');
+      if (savedIdx > 0 && words.length > 0 && (savedIdx / words.length) > 0.02) {
+        showResumeBanner(savedIdx, words.length);
+      }
+    }
+
+    // Enable save button if text was restored
+    const saveBtn = document.getElementById('btn-save-to-library') as HTMLButtonElement | null;
+    if (saveBtn && fullText.trim()) saveBtn.disabled = false;
+    // Check for a page import queued by the background script
+    // (set when user clicks "Open in Reader" from the floating toolbar).
+    // Consume it immediately so the next open starts blank.
+    try {
+      const res = await chrome.storage.local.get('spokn_page_import');
+      const imp = res['spokn_page_import'] as { title: string; text: string; url?: string; ts: number } | undefined;
+      // Discard stale imports (older than 30 s) in case the tab was slow to open
+      if (imp && Date.now() - imp.ts < 30_000) {
+        await chrome.storage.local.remove('spokn_page_import');
+        const urlLine  = imp.url ? `Source: ${imp.url}` : '';
+        const parts    = [imp.title, urlLine, imp.text].filter(Boolean);
+        const text     = parts.join('\n\n');
+        loadText(text);
+        setStatus(`Imported from page — ${words.length} words`, 'info');
+        return;
+      }
+    } catch { /* storage unavailable — fall through */ }
+
+    // Fall back to URL params (existing behaviour)
     const params = new URLSearchParams(location.search);
     const initText = params.get('text');
     if (initText) loadText(decodeURIComponent(initText));

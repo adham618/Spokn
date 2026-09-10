@@ -40,7 +40,7 @@ export default defineConfig({
             all_frames: true,
           },
         ],
-        permissions: ['storage', 'activeTab', 'contextMenus'],
+        permissions: ['storage', 'unlimitedStorage', 'activeTab', 'contextMenus'],
         host_permissions: ['<all_urls>', 'file:///*'],
         web_accessible_resources: [
           {
@@ -60,6 +60,10 @@ export default defineConfig({
           'read-selection': {
             suggested_key: { default: 'Alt+Shift+8', mac: 'Command+Shift+8' },
             description: 'Read selected text',
+          },
+          'open-reader': {
+            suggested_key: { default: 'Alt+Shift+U', mac: 'Command+Shift+U' },
+            description: 'Open Spokn Reader',
           },
         },
       }),

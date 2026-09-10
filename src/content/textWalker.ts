@@ -202,6 +202,22 @@ export function walkPage(): WalkResult {
 }
 
 /**
+ * Extracts readable plain text from the page using the same SKIP_TAGS logic
+ * the extension uses for playback — no DOM mutation, no external libraries.
+ * Works on any page: articles, search results, docs, product pages, etc.
+ */
+export function extractPageText(): { title: string; text: string } {
+  const textNodes = collectTextNodes(document.body);
+  const parts: string[] = [];
+  for (const tn of textNodes) {
+    const t = tn.textContent?.trim();
+    if (t) parts.push(t);
+  }
+  const text = parts.join(' ').replace(/\s{2,}/g, ' ').trim();
+  const title = document.title?.trim() ?? '';
+  return { title, text };
+}
+/**
  * Async version of walkPage — processes text nodes in chunks so the main
  * thread stays interactive. Use this from startReading() on page mode.
  */

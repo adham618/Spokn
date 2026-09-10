@@ -31,8 +31,12 @@ export type Message =
   // Feature: per-site settings
   | { type: 'SET_SITE_SETTINGS'; domain: string; voiceName: string; rate: number }
   // Feature: open reader page
-  | { type: 'OPEN_READER_PAGE' };
+  | { type: 'OPEN_READER_PAGE' }
+  // Feature: open reader page with extracted page text
+  | { type: 'OPEN_READER_PAGE_WITH_TEXT'; title: string; text: string; url: string }
+  // Feature: reader requests page text from the active tab
+  | { type: 'GET_PAGE_TEXT' };
 
 export type MessageResponse =
-  | { success: true; state?: PlaybackState; visible?: boolean }
+  | { success: true; state?: PlaybackState; visible?: boolean; title?: string; text?: string }
   | { success: false; error: string };

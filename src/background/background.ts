@@ -36,9 +36,20 @@ async function sendToTab(tabId: number, message: Message): Promise<MessageRespon
 
 // ─── Extension icon click → toggle floating toolbar ───────────────────────────
 
+/** Returns true for tabs where the content script can legitimately run. */
+function isInjectableTab(tab: chrome.tabs.Tab): boolean {
+  const url = tab.url ?? tab.pendingUrl ?? '';
+  return url.startsWith('http://') || url.startsWith('https://') || url.startsWith('file://');
+}
+
 chrome.action.onClicked.addListener(async (tab) => {
   if (!tab.id) return;
   activeTabId = tab.id;
+
+  // On non-injectable pages (new tab, chrome://, extension pages, etc.)
+  // the content script can never run — don't show the refresh prompt there.
+  if (!isInjectableTab(tab)) return;
+
   const res = await sendToTab(tab.id, { type: 'TOGGLE_TOOLBAR' });
   if (!res.success) {
     tabToReload = tab.id; // store before popup opens
@@ -54,7 +65,7 @@ chrome.runtime.onInstalled.addListener(() => {
   chrome.contextMenus.create({
     id: 'spokn-read-selection',
     title: 'Read selection with Spokn',
-    contexts: ['selection'],   // only appears when text is selected
+    contexts: ['selection'],
   });
 });
 
@@ -62,8 +73,6 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
   if (info.menuItemId !== 'spokn-read-selection' || !tab?.id) return;
   activeTabId = tab.id;
 
-  // Pass selectionText so the content script can fall back to it if the
-  // right-click dismissed the DOM selection before the message arrives (Mac).
   const res = await sendToTab(tab.id, {
     type: 'READ_SELECTION',
     selectionText: info.selectionText ?? '',
@@ -103,6 +112,21 @@ chrome.runtime.onMessage.addListener(
         return;
       }
 
+      // Open reader with extracted page text — doesn't need a tab resolved
+      if (msg.type === 'OPEN_READER_PAGE_WITH_TEXT') {
+        await chrome.storage.local.set({
+          spokn_page_import: {
+            title: msg.title,
+            text:  msg.text,
+            url:   msg.url,
+            ts:    Date.now(),
+          },
+        });
+        chrome.tabs.create({ url: chrome.runtime.getURL('src/reader/reader.html') });
+        sendResponse({ success: true } satisfies MessageResponse);
+        return;
+      }
+
       const tab = activeTabId
         ? await chrome.tabs.get(activeTabId).catch(() => null)
         : await getActiveTab();
@@ -128,6 +152,44 @@ chrome.runtime.onMessage.addListener(
           chrome.tabs.create({ url: chrome.runtime.getURL('src/reader/reader.html') });
           sendResponse({ success: true } satisfies MessageResponse);
           return;
+
+        case 'GET_PAGE_TEXT': {
+          // The reader page is the active tab when this message arrives, so
+          // getActiveTab() would return the reader itself (no content script).
+          // Instead use activeTabId (last real web page) and verify it's
+          // injectable. If it's also the reader, find the most recently
+          // active non-extension tab.
+          const readerOrigin = chrome.runtime.getURL('');
+
+          let targetTab: chrome.tabs.Tab | null = null;
+
+          // Try activeTabId first
+          if (activeTabId) {
+            const t = await chrome.tabs.get(activeTabId).catch(() => null);
+            if (t && isInjectableTab(t)) targetTab = t;
+          }
+
+          // Fall back: find the most recently accessed injectable tab
+          if (!targetTab) {
+            const tabs = await chrome.tabs.query({});
+            const injectable = tabs
+              .filter(t => {
+                const url = t.url ?? t.pendingUrl ?? '';
+                return isInjectableTab(t) && !url.startsWith(readerOrigin);
+              })
+              .sort((a, b) => (b.lastAccessed ?? 0) - (a.lastAccessed ?? 0));
+            targetTab = injectable[0] ?? null;
+          }
+
+          if (!targetTab?.id) {
+            sendResponse({ success: false, error: 'No web page found — open an article tab first' } satisfies MessageResponse);
+            return;
+          }
+
+          const res = await sendToTab(targetTab.id, { type: 'GET_PAGE_TEXT' });
+          sendResponse(res);
+          return;
+        }
 
         case 'PLAY':
           activeTabId = tabId;
@@ -212,6 +274,10 @@ chrome.commands.onCommand.addListener(async (command) => {
         await sendToTab(tabId, { type: 'OPEN_TOOLBAR' } as any);
       }
       await sendToTab(tabId, { type: 'READ_SELECTION' });
+      break;
+    }
+    case 'open-reader': {
+      chrome.tabs.create({ url: chrome.runtime.getURL('src/reader/reader.html') });
       break;
     }
   }

@@ -33,6 +33,7 @@ export interface ToolbarCallbacks {
   onSaveSiteSettings: (domain: string, voiceName: string, rate: number, autoScroll: boolean, sleepTimerMinutes: number) => void;
   onClearSiteSettings: (domain: string) => void;
   onOpenReaderPage: () => void;
+  onSendToReader: () => void;
 }
 
 export interface ToolbarState {
@@ -81,6 +82,8 @@ const ICONS = {
   skipPrev: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="10 25 80 50" width="13" height="13" fill="currentColor" aria-hidden="true" class="skip-prev-icon"><path d="M74.22 45.88 43.49 25.61a4.03 4.03 0 0 0-3.75-.12c-1.38.8-2.23 2.42-2.23 4.24v10.08l-21.52-14.2a4.03 4.03 0 0 0-3.75-.12c-1.38.8-2.23 2.42-2.23 4.24v40.55c0 1.82.86 3.44 2.23 4.24a4.03 4.03 0 0 0 3.75-.12l21.52-14.2v10.08c0 1.82.86 3.44 2.23 4.24.61.41 1.29.61 1.97.61s1.36-.2 1.97-.61l30.73-20.27c1.28-.84 2.04-2.38 2.04-4.12s-.76-3.28-2.04-4.12Z"/><path d="M83.72 25c-3.46 0-6.28 2.96-6.28 6.6v36.8c0 3.64 2.82 6.6 6.28 6.6S90 72.04 90 68.4V31.6c0-3.64-2.82-6.6-6.28-6.6Z"/></svg>`,
   // Feature: reader page
   bookOpen: `<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg>`,
+  // Feature: send page to reader
+  sendToReader: `<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/><line x1="18" y1="8" x2="22" y2="8"/><line x1="20" y1="6" x2="22" y2="8"/><line x1="20" y1="10" x2="22" y2="8"/></svg>`,
   // Expand/collapse chevron
   chevronDown: `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"/></svg>`,
   chevronUp:   `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="18 15 12 9 6 15"/></svg>`,
@@ -286,6 +289,12 @@ export class FloatingToolbar {
     this.shadow?.getElementById('spokn-engine-error-banner')?.remove();
   }
 
+  /** Briefly marks the Send-to-Reader button as busy. */
+  setSendingState(active: boolean): void {
+    const btn = this.shadow?.getElementById('spokn-send-to-reader-btn');
+    btn?.classList.toggle('sending', active);
+  }
+
   // ─── State updates ──────────────────────────────────────────────────────────
 
   updateState(partial: Partial<ToolbarState>): void {
@@ -342,15 +351,6 @@ export class FloatingToolbar {
         this.st.sleepTimerMinutes !== prev.sleepTimerMinutes ||
         this.st.status !== prev.status) {
       this.updateSleepTimerDisplay();
-    }
-
-    // Skip buttons — only visible when playing or paused
-    if (this.st.status !== prev.status) {
-      const active = this.st.status === 'playing' || this.st.status === 'paused';
-      const skipPrev = this.shadow.getElementById('spokn-skip-prev') as HTMLElement | null;
-      const skipNext = this.shadow.getElementById('spokn-skip-next') as HTMLElement | null;
-      if (skipPrev) skipPrev.style.display = active ? 'flex' : 'none';
-      if (skipNext) skipNext.style.display = active ? 'flex' : 'none';
     }
 
     // Update click-mode indicator on the pill
@@ -610,6 +610,10 @@ export class FloatingToolbar {
               <span class="shortcut-keys"><kbd>⌘</kbd><kbd>Shift</kbd><kbd>8</kbd></span>
               <span class="shortcut-desc">Read selection</span>
             </div>
+            <div class="shortcut-row">
+              <span class="shortcut-keys"><kbd>⌘</kbd><kbd>Shift</kbd><kbd>U</kbd></span>
+              <span class="shortcut-desc">Open Reader</span>
+            </div>
             ` : `
             <div class="shortcut-row">
               <span class="shortcut-keys"><kbd>Alt</kbd><kbd>Shift</kbd><kbd>K</kbd></span>
@@ -623,6 +627,10 @@ export class FloatingToolbar {
               <span class="shortcut-keys"><kbd>Alt</kbd><kbd>Shift</kbd><kbd>8</kbd></span>
               <span class="shortcut-desc">Read selection</span>
             </div>
+            <div class="shortcut-row">
+              <span class="shortcut-keys"><kbd>Alt</kbd><kbd>Shift</kbd><kbd>U</kbd></span>
+              <span class="shortcut-desc">Open Reader</span>
+            </div>
             `}
             <button id="spokn-shortcuts-link" class="shortcut-hint-link">Set shortcuts manually →</button>
           </div>
@@ -635,6 +643,10 @@ export class FloatingToolbar {
               Support me on Ko-fi
             </a>
           </div>
+          <button id="spokn-share-btn" title="Share Spokn with friends">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>
+            Share Spokn
+          </button>
           <div id="spokn-version">
             ${import.meta.env.VITE_APP_NAME} v${import.meta.env.VITE_APP_VERSION}
             &nbsp;·&nbsp;
@@ -694,21 +706,15 @@ export class FloatingToolbar {
               ${this.pillExpanded ? ICONS.chevronUp : ICONS.chevronDown}
             </button>
 
-            <!-- Expanded section: skip + reader -->
+            <!-- Expanded section: reader buttons only — always stable, never pushed by skip -->
             <div id="spokn-expanded-section" class="expanded-section${this.pillExpanded ? ' expanded-section-open' : ''}">
-              <button id="spokn-skip-prev" class="btn btn-skip"
-                aria-label="Previous sentence" title="Previous sentence"
-                style="display:${(isPlaying || this.st.status === 'paused') ? 'flex' : 'none'}">
-                ${ICONS.skipPrev}
-              </button>
-              <button id="spokn-skip-next" class="btn btn-skip"
-                aria-label="Next sentence" title="Next sentence"
-                style="display:${(isPlaying || this.st.status === 'paused') ? 'flex' : 'none'}">
-                ${ICONS.skipNext}
-              </button>
               <button id="spokn-reader-btn" class="btn btn-reader"
-                aria-label="Open Reader" title="Open Reader — paste text or load a PDF">
+                aria-label="Open in Reader" title="Open Reader">
                 ${ICONS.bookOpen}
+              </button>
+              <button id="spokn-send-to-reader-btn" class="btn btn-send-to-reader"
+                aria-label="Send page to Reader" title="Extract this page and send to Reader">
+                ${ICONS.sendToReader}
               </button>
             </div>
 
@@ -778,6 +784,11 @@ export class FloatingToolbar {
     // Reader page button
     s.getElementById('spokn-reader-btn')?.addEventListener('click', () => {
       this.cb.onOpenReaderPage();
+    });
+
+    // Send page to reader button
+    s.getElementById('spokn-send-to-reader-btn')?.addEventListener('click', () => {
+      this.cb.onSendToReader();
     });
 
     // Expand / collapse toggle
@@ -855,6 +866,25 @@ export class FloatingToolbar {
     s.getElementById('spokn-reset-btn')?.addEventListener('click', () => {
       if (window.confirm('Reset all settings to defaults?')) {
         this.cb.onReset();
+      }
+    });
+
+    s.getElementById('spokn-share-btn')?.addEventListener('click', () => {
+      const storeUrl = import.meta.env.VITE_STORE_URL as string ?? 'https://chromewebstore.google.com/detail/spokn-offline-text-to-spe/kgpbmfedaaagllbdnhpcgpbhoehhiibe';
+      const shareText = `I've been using Spokn to listen to any webpage or document — 100% offline, no sign-up. Check it out:`;
+      const showTip = (msg: string) => {
+        const tip = this.shadow?.getElementById('spokn-tooltip') as HTMLElement | null;
+        if (!tip) return;
+        tip.textContent = msg;
+        tip.classList.add('visible');
+        setTimeout(() => tip.classList.remove('visible'), 2200);
+      };
+      if (navigator.share) {
+        navigator.share({ title: 'Spokn — Offline Text to Speech', text: shareText, url: storeUrl }).catch(() => {});
+      } else {
+        navigator.clipboard.writeText(`${shareText}\n${storeUrl}`)
+          .then(() => showTip('Link copied!'))
+          .catch(() => showTip('Copy failed'));
       }
     });
 
@@ -2314,6 +2344,31 @@ export class FloatingToolbar {
         border-color: rgba(239,68,68,0.6);
       }
 
+      #spokn-share-btn {
+        all: unset;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 6px;
+        width: 100%;
+        box-sizing: border-box;
+        margin-top: 8px;
+        padding: 7px 0;
+        text-align: center;
+        font-size: 11px;
+        font-family: inherit;
+        color: rgba(255,255,255,0.55);
+        border: 1px solid rgba(255,255,255,0.12);
+        border-radius: 8px;
+        cursor: pointer;
+        transition: background 0.15s, border-color 0.15s, color 0.15s;
+      }
+      #spokn-share-btn:hover {
+        background: rgba(255,255,255,0.07);
+        border-color: rgba(255,255,255,0.28);
+        color: #e8edf5;
+      }
+
       /* ── Expanded section ────────────────────────────────────────────────── */
       .expanded-section {
         display: flex;
@@ -2449,6 +2504,13 @@ export class FloatingToolbar {
         color: #BAB9BA;
       }
       .btn-reader:hover { color: #fff; }
+
+      /* ── Send to Reader button (pill) ────────────────────────────────────── */
+      .btn-send-to-reader {
+        color: #BAB9BA;
+      }
+      .btn-send-to-reader:hover { color: #4db8ff; }
+      .btn-send-to-reader.sending { color: #4db8ff; opacity: 0.7; pointer-events: none; }
 
       /* ── Engine error banner ─────────────────────────────────────────────── */      #spokn-engine-error-banner {
         position: absolute;
