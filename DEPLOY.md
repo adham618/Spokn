@@ -198,7 +198,7 @@ Click **Submit for review**. First-time submissions take **1–3 business days**
 | Styling | Shadow DOM (content script toolbar) |
 | PDF parsing | pdfjs-dist via CDN (lazy, only when Reader opens a PDF) |
 | External dependencies | None at runtime for normal use |
-| Zip size | ~600KB (includes bundled pdfjs) |
+| Zip size | ~594 KB (includes bundled pdfjs) |
 
 ---
 
