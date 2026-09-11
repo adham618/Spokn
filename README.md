@@ -16,12 +16,14 @@ Offline text-to-speech Chrome extension with word-by-word highlighting. Reads an
 - **Sleep timer** — automatically stops reading after 5 / 10 / 15 / 30 / 60 minutes, with live mm:ss countdown
 - **Per-site settings** — save voice, speed, and auto-scroll preference per domain
 - **Reader page** — dedicated page to paste text or load a PDF and have it read aloud
+- **Library** — save articles, PDFs, and documents to a personal library with progress tracking; text stored per-item so large books never hit storage limits
 - **Floating toolbar** — draggable vertical pill on the right side of the page, expandable for extra controls
+- **4 reading themes** — Dark, Sepia, Paper, Focus — with matching font, background, and spacing
 - **9 highlight themes** — Yellow, Sky, Mint, Coral, Violet, Warm, Rose, Dark, Light
 - **Voice picker** — tabbed All/Favorites picker, grouped by language, with search and star/pin
 - **Speed presets** — 0.5× / 0.8× / 1× / 1.5× / 2× / 2.5× / 3× quick-select buttons
 - **Speed, pitch, volume** — fully adjustable with +/− buttons and persisted across sessions
-- **Keyboard shortcuts** — play/pause, stop, read selection without touching the mouse
+- **Keyboard shortcuts** — play/pause, stop, read selection, open reader without touching the mouse
 - **100% offline** — uses only `window.speechSynthesis` with local system voices
 - **No ads, no tracking, no accounts**
 
@@ -32,6 +34,7 @@ Offline text-to-speech Chrome extension with word-by-word highlighting. Reads an
 | `Alt + Shift + K` | `⌘ + Shift + K` | Play / Pause |
 | `Alt + Shift + 0` | `⌘ + Shift + 0` | Stop |
 | `Alt + Shift + 8` | `⌘ + Shift + 8` | Read selected text |
+| `Alt + Shift + U` | `⌘ + Shift + U` | Open Reader |
 
 ## Tech Stack
 
@@ -39,7 +42,7 @@ Offline text-to-speech Chrome extension with word-by-word highlighting. Reads an
 - **Reader page** — Vanilla TypeScript
 - **Build tool** — Vite + `vite-plugin-web-extension`
 - **Manifest** — Chrome Manifest V3
-- **Storage** — `chrome.storage.sync` (extension settings) + `chrome.storage.local` (reader settings + position memory)
+- **Storage** — `chrome.storage.local` (all extension settings, library index, per-item text, position memory)
 - **TTS** — `window.speechSynthesis` (local voices only)
 - **PDF parsing** — pdfjs-dist loaded lazily from CDN (only when a PDF is opened in the Reader)
 

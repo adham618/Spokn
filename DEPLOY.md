@@ -21,7 +21,7 @@ npm run build
 The `dist/` folder is what you submit. Zip it:
 ```bash
 cd /Users/adhamtarek/Downloads/Spokn
-zip -r Spokn-v2.0.0.zip dist/ --exclude "*/.DS_Store"
+zip -r spokn-2.0.1.zip dist/ --exclude "*/.DS_Store"
 ```
 
 ### 2. Store listing assets
@@ -126,6 +126,7 @@ After adding voices, restart Chrome and reopen the Spokn settings panel — new 
 | Alt+Shift+K | ⌘+Shift+K | Play / Pause |
 | Alt+Shift+0 | ⌘+Shift+0 | Stop |
 | Alt+Shift+8 | ⌘+Shift+8 | Read selected text |
+| Alt+Shift+U | ⌘+Shift+U | Open Reader |
 
 ---
 
@@ -141,7 +142,7 @@ https://github.com/adham618/Spokn
 If you find Spokn useful:
 https://ko-fi.com/adham_tarek
 
-**Version:** 2.0.0 | **License:** Free, MIT
+**Version:** 2.0.1 | **License:** Free, MIT
 
 ---
 
@@ -154,7 +155,7 @@ https://ko-fi.com/adham_tarek
 
 ### Step 2 — Create a new item
 1. Click **Add new item**
-2. Upload `Spokn-v2.0.0.zip`
+2. Upload `spokn-2.0.1.zip`
 3. Chrome will validate the manifest and show any errors
 
 ### Step 3 — Fill in store listing
@@ -181,6 +182,7 @@ Click **Submit for review**. First-time submissions take **1–3 business days**
 - Share your Chrome Web Store URL
 - Update the Ko-fi link in `.env` if needed
 - For future updates: bump `version` in `package.json`, `vite.config.ts`, and `VITE_APP_VERSION` in `.env`, rebuild, re-zip, upload
+- `VITE_STORE_URL` in `.env` should match your Chrome Web Store listing URL
 
 ---
 
@@ -191,12 +193,12 @@ Click **Submit for review**. First-time submissions take **1–3 business days**
 | Build tool | Vite 5 |
 | Language | TypeScript |
 | TTS engine | Web Speech API (`window.speechSynthesis`) |
-| Storage | `chrome.storage.sync` + `chrome.storage.local` |
+| Storage | `chrome.storage.local` (all settings, library index, per-item text, position memory) |
 | Extension standard | Chrome Manifest V3 |
 | Styling | Shadow DOM (content script toolbar) |
 | PDF parsing | pdfjs-dist via CDN (lazy, only when Reader opens a PDF) |
 | External dependencies | None at runtime for normal use |
-| Zip size | ~72KB |
+| Zip size | ~600KB (includes bundled pdfjs) |
 
 ---
 
@@ -204,7 +206,7 @@ Click **Submit for review**. First-time submissions take **1–3 business days**
 
 | Issue | How we handle it |
 |---|---|
-| Requesting unnecessary permissions | Only `storage`, `activeTab`, `contextMenus` — all justified |
+| Requesting unnecessary permissions | Only `storage`, `unlimitedStorage`, `activeTab`, `contextMenus` — all justified |
 | Vague single purpose | Clearly stated: "reads webpage text aloud with word-by-word highlighting" |
 | Missing privacy policy | Available at `/privacy-policy/index.html` |
 | Deceptive description | All claims are accurate and verifiable |
