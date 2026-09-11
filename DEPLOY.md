@@ -21,7 +21,7 @@ npm run build
 The `dist/` folder is what you submit. Zip it:
 ```bash
 cd /Users/adhamtarek/Downloads/Spokn
-zip -r spokn-2.1.0.zip dist/ --exclude "*/.DS_Store"
+zip -r spokn-2.1.1.zip dist/ --exclude "*/.DS_Store"
 ```
 
 ### 2. Store listing assets
@@ -142,7 +142,7 @@ https://github.com/adham618/Spokn
 If you find Spokn useful:
 https://ko-fi.com/adham_tarek
 
-**Version:** 2.1.0 | **License:** Free, MIT
+**Version:** 2.1.1 | **License:** Free, MIT
 
 ---
 
@@ -155,7 +155,7 @@ https://ko-fi.com/adham_tarek
 
 ### Step 2 — Create a new item
 1. Click **Add new item**
-2. Upload `spokn-2.1.0.zip`
+2. Upload `spokn-2.1.1.zip`
 3. Chrome will validate the manifest and show any errors
 
 ### Step 3 — Fill in store listing

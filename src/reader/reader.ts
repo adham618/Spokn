@@ -132,7 +132,9 @@ interface ReaderSettings {
   fontSize: number;
   fontFamily: string;
   sleepTimerMinutes: number;
-  favoriteVoices: string[];
+  // NOTE: favoriteVoices is NOT stored here — it lives in chrome.storage.sync
+  // under the same 'favoriteVoices' key used by the floating toolbar and popup,
+  // so favorites are shared across all Spokn surfaces.
   // NOTE: text and wordIndex are intentionally NOT stored here anymore.
   // text  → READER_TEXT_KEY  (separate key so a large doc doesn't bloat the settings object)
   // wordIndex → still here (it's a small number, fine to keep)
@@ -151,7 +153,6 @@ const DEFAULT_SETTINGS: ReaderSettings = {
   fontSize: 0,          // 0 = follow theme default
   fontFamily: '',       // '' = follow theme default
   sleepTimerMinutes: 0,
-  favoriteVoices: [],
   wordIndex: 0,
   activeLibraryItemId: null,
 };
@@ -1397,6 +1398,8 @@ function emptyVoiceState(msg: string): HTMLElement {
 
 function selectVoice(name: string): void {
   selectedVoice = name;
+  // Persist to chrome.storage.sync — same key used by the floating toolbar and popup
+  chrome.storage.sync.set({ voiceName: name }).catch(() => {});
   document.querySelectorAll<HTMLElement>('.vp-row').forEach(r => {
     const active = r.dataset.voice === name;
     r.classList.toggle('vp-row-selected', active);
@@ -1409,6 +1412,8 @@ function selectVoice(name: string): void {
 
 function toggleFav(name: string): void {
   favoriteVoices = favoriteVoices.includes(name) ? favoriteVoices.filter(n => n !== name) : [...favoriteVoices, name];
+  // Persist to chrome.storage.sync — same key used by the toolbar and popup
+  chrome.storage.sync.set({ favoriteVoices }).catch(() => {});
   renderVoiceList();
 }
 
@@ -1426,7 +1431,11 @@ function populateVoices(): void {
   if (selectedVoice && allVoices.some(v => v.name === selectedVoice)) { renderVoiceList(); }
   else if (!selectedVoice) {
     const pref = allVoices.find(v => v.lang.startsWith('en') && v.localService) ?? allVoices.find(v => v.lang.startsWith('en')) ?? allVoices[0];
-    if (pref) selectedVoice = pref.name;
+    if (pref) {
+      selectedVoice = pref.name;
+      // Persist the auto-picked default to sync so toolbar/popup see the same voice
+      chrome.storage.sync.set({ voiceName: pref.name }).catch(() => {});
+    }
   }
   renderVoiceList();
   // Set voice help link — same OS-aware ChatGPT prompt as the toolbar
@@ -1451,8 +1460,8 @@ async function applySettings(s: ReaderSettings): Promise<void> {
   userFontSize      = s.fontSize ?? DEFAULT_SETTINGS.fontSize;
   userFontFamily    = s.fontFamily ?? DEFAULT_SETTINGS.fontFamily;
   sleepTimerMinutes = s.sleepTimerMinutes;
-  favoriteVoices    = s.favoriteVoices;
-  if (s.voiceName) selectedVoice = s.voiceName;
+  // Only use the local voiceName as a fallback — sync value (loaded earlier) takes priority
+  if (s.voiceName && !selectedVoice) selectedVoice = s.voiceName;
 
   // Restore active library item id so the library panel highlights the right card
   activeLibraryItemId = s.activeLibraryItemId ?? null;
@@ -1500,11 +1509,12 @@ async function saveAllSettings(): Promise<void> {
     fontSize: userFontSize,
     fontFamily: userFontFamily,
     sleepTimerMinutes,
-    favoriteVoices,
     wordIndex,
     activeLibraryItemId,
   };
   await saveStoredSettings(s);
+  // Mirror voiceName to chrome.storage.sync so the toolbar/popup stay in sync
+  chrome.storage.sync.set({ voiceName: selectedVoice }).catch(() => {});
   // Also persist text separately (belt-and-suspenders flush)
   await saveStoredText(fullText).catch(() => {});
   showToast('Settings saved');
@@ -2889,8 +2899,19 @@ injectStyles();
 buildUI();
 attachListeners();
 
+// Load voiceName + favoriteVoices from chrome.storage.sync FIRST — before
+// populateVoices() fires — so renderVoiceList() always has the correct data.
+// Then proceed with the rest of the async init chain.
+chrome.storage.sync.get(['voiceName', 'favoriteVoices']).then(synced => {
+  if (synced.voiceName) selectedVoice = synced.voiceName as string;
+  if (Array.isArray(synced.favoriteVoices)) favoriteVoices = synced.favoriteVoices as string[];
+  // If voices are already loaded (sync page-load), re-render now that we have the correct data.
+  if (allVoices.length > 0) renderVoiceList();
+}).catch(() => {});
+
 loadStoredSettings().then(s => {
   return applySettings(s).then(async () => {
+    // voiceName + favoriteVoices are already loaded from sync above; nothing more to do here
     // Run one-time migration for old inline-text library format
     await migrateLibraryIfNeeded();
 
