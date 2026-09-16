@@ -21,7 +21,7 @@ npm run build
 The `dist/` folder is what you submit. Zip it:
 ```bash
 cd /Users/adhamtarek/Downloads/Spokn
-zip -r spokn-2.1.2.zip dist/ --exclude "*/.DS_Store"
+zip -r spokn-2.1.3.zip dist/ --exclude "*/.DS_Store"
 ```
 
 ### 2. Store listing assets
@@ -40,74 +40,87 @@ See `STORE_IMAGES/STORE_IMAGES.md` for AI prompts to generate each one.
 
 ### 3. Store listing copy
 
-**Name:** Spokn — Offline Text to Speech
+**Name:** Spokn — Text to Speech & Page Reader
 
 **Short description (132 chars max):**
 ```
-Read any webpage aloud with word-by-word highlighting. Skip sentences, sleep timer, per-site settings. 100% offline, no accounts.
+Listen to any webpage, article, or PDF with word-by-word highlighting. Offline, private, no accounts. Your voice, your pace.
 ```
 
 **Detailed description:**
 
 ---
 
-Spokn is a free, fully offline text-to-speech extension that reads any webpage aloud while highlighting each word as it is spoken — exactly like Speechify, but private, free, and using only your device's built-in voices.
+Spokn turns any webpage, article, or PDF into an audio experience — highlighting each word as it's spoken so you always know exactly where you are. Think Speechify, but free, fully offline, and built for people who actually care about privacy.
 
-**No cloud. No accounts. No internet required. No data collection.**
+**Nothing leaves your device. No account. No subscription. No catch.**
 
 ---
 
 ### How it works
 
 1. Click the Spokn icon in your toolbar
-2. A floating vertical toolbar appears on the right side of the page
-3. Click Play — Spokn reads the entire page from the top
-4. Or click any paragraph to start reading from that point
-5. Or select text, right-click, and choose "Read selection with Spokn"
+2. A floating toolbar appears on the page — drag it anywhere
+3. Hit Play to read the whole page, or click any paragraph to start from there
+4. Or select text, right-click, and choose "Read selection with Spokn"
+5. Your position is saved automatically — come back anytime and pick up where you left off
+
+---
+
+### What makes Spokn different
+
+**It highlights every word, in real time.**
+Not the sentence. Not the paragraph. The exact word being spoken — so you can follow along, stay focused, and actually absorb what you're reading.
+
+**It works completely offline.**
+No cloud processing, no API calls, no internet required. Spokn uses your device's built-in voices — which means it works even on a plane, in a tunnel, or anywhere your connection drops.
+
+**It remembers where you stopped.**
+Switch tabs, close the browser, come back later — Spokn saves your reading position on every page automatically.
 
 ---
 
 ### Features
 
 **Reading**
-- **Word-by-word highlighting** — each word is highlighted precisely as it is spoken
-- **Three reading modes** — Full Page, Selected Text, or Click to start from any paragraph
-- **Skip sentences** — ⏮ ⏭ buttons to jump forward or back by sentence
-- **Click any word** — click any highlighted word in the reading view to jump to it
-- **Reading position memory** — automatically resumes from where you left off on any page
+- **Word-by-word highlighting** — tracks the exact word being spoken in real time
+- **Three reading modes** — Full Page, Selected Text, or Click-to-start from any paragraph
+- **Skip sentences** — ⏮ ⏭ buttons to jump forward or back instantly
+- **Click any word** — tap any highlighted word to jump directly to it
+- **Reading position memory** — resumes from where you left off on any page
 - **Auto-scroll** — page scrolls smoothly to keep the current sentence in view (toggleable)
 
 **Controls**
-- **Sleep timer** — stops reading after 5 / 10 / 15 / 30 / 60 minutes, with live mm:ss countdown
-- **Per-site settings** — save your preferred voice, speed, and auto-scroll setting per domain
+- **Sleep timer** — stops reading after 5 / 10 / 15 / 30 / 60 minutes, with live countdown
+- **Per-site settings** — save your preferred voice, speed, and scroll setting per domain
 - **Keyboard shortcuts** — play/pause, stop, read selection without touching the mouse
 
 **Reader Page**
-- **Paste text** — open the built-in Reader page and paste any text to have it read aloud
-- **Load a PDF** — drag and drop a PDF into the Reader page to extract and read its text
-- **Click words** — click any word in the reading view to start from that position
+- **Paste any text** — open the built-in Reader and paste anything to hear it read aloud
+- **PDF support** — drag and drop a PDF to extract and read its text
+- **Click any word** — jump to any position in the reading view instantly
 
 **Voices & Audio**
-- **All system voices** — uses every voice installed on your device, grouped by language
-- **Favorites** — star voices to pin them to a Favorites tab for quick access
-- **Speed presets** — 0.5× / 0.8× / 1× / 1.5× / 2× / 2.5× / 3× quick-select buttons
-- **Pitch and volume** — fully adjustable with +/− buttons
+- **All system voices** — every voice installed on your device, grouped by language
+- **Favorites** — star voices to pin them for quick access
+- **Speed presets** — 0.5× to 3× with quick-select buttons
+- **Pitch and volume** — fully adjustable
 
 **Appearance**
 - **9 highlight themes** — Yellow, Sky, Mint, Coral, Violet, Warm, Rose, Dark, Light
-- **Floating toolbar** — draggable vertical pill, compact by default, expands for extra controls
+- **Floating toolbar** — draggable pill, compact by default, expands for extra controls
 
 ---
 
 ### Privacy
 
-Spokn does not collect any data. It makes no network requests during normal use. All TTS processing happens entirely on your device. The Reader page optionally loads pdfjs from a CDN (cdn.jsdelivr.net) only when you open a PDF — nothing else is ever sent anywhere.
+Spokn collects zero data. It makes no network requests during normal use — everything runs on your device. The Reader page loads pdfjs from a CDN (cdn.jsdelivr.net) only when you open a PDF. That's it.
 
 ---
 
-### How to add more voices
+### How to get more voices
 
-Spokn uses the voices already installed on your OS. To get more voices:
+Spokn uses the voices already on your OS. To add more:
 
 **Windows:** Settings → Time & Language → Speech → Manage voices → Add voices
 
@@ -115,7 +128,7 @@ Spokn uses the voices already installed on your OS. To get more voices:
 
 **ChromeOS:** Settings → Advanced → Accessibility → Text-to-Speech → Speech engines
 
-After adding voices, restart Chrome and reopen the Spokn settings panel — new voices appear automatically.
+Restart Chrome after adding voices — they appear in Spokn automatically.
 
 ---
 
@@ -130,19 +143,19 @@ After adding voices, restart Chrome and reopen the Spokn settings panel — new 
 
 ---
 
-### Source code
+### Open source
 
-Spokn is open source (MIT license). Full source at:
+Spokn is free and open source (MIT). Full source code at:
 https://github.com/adham618/Spokn
 
 ---
 
-### Support
+### Support the project
 
-If you find Spokn useful:
+If Spokn saves you time or makes your day easier:
 https://ko-fi.com/adham_tarek
 
-**Version:** 2.1.2 | **License:** Free, MIT
+**Version:** 2.1.3 | **License:** Free, MIT
 
 ---
 
@@ -155,7 +168,7 @@ https://ko-fi.com/adham_tarek
 
 ### Step 2 — Create a new item
 1. Click **Add new item**
-2. Upload `spokn-2.1.2.zip`
+2. Upload `spokn-2.1.3.zip`
 3. Chrome will validate the manifest and show any errors
 
 ### Step 3 — Fill in store listing

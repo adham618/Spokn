@@ -870,7 +870,7 @@ export class FloatingToolbar {
     });
 
     s.getElementById('spokn-share-btn')?.addEventListener('click', () => {
-      const storeUrl = import.meta.env.VITE_STORE_URL as string ?? 'https://chromewebstore.google.com/detail/spokn-offline-text-to-spe/kgpbmfedaaagllbdnhpcgpbhoehhiibe';
+      const storeUrl = import.meta.env.VITE_STORE_URL as string ?? 'https://chromewebstore.google.com/detail/jhckonkklkogobamhhdjajalbnblcoja?utm_source=spokn_extension';
       const shareText = `I've been using Spokn to listen to any webpage or document — 100% offline, no sign-up. Check it out:`;
       const showTip = (msg: string) => {
         const tip = this.shadow?.getElementById('spokn-tooltip') as HTMLElement | null;

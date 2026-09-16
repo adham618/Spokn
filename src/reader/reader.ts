@@ -1588,7 +1588,7 @@ function showResumeBanner(idx: number, total: number): void {
 }
 
 const KOFI_URL  = import.meta.env.VITE_KOFI_URL  as string ?? 'https://ko-fi.com/adham_tarek';
-const STORE_URL = import.meta.env.VITE_STORE_URL as string ?? 'https://chromewebstore.google.com/detail/spokn-offline-text-to-spe/kgpbmfedaaagllbdnhpcgpbhoehhiibe';
+const STORE_URL = import.meta.env.VITE_STORE_URL as string ?? 'https://chromewebstore.google.com/detail/jhckonkklkogobamhhdjajalbnblcoja?utm_source=spokn_extension';
 
 function shareExtension(): void {
   const text = `I've been using Spokn to listen to any webpage or document — 100% offline, no sign-up. Check it out:`;
