@@ -1,7 +1,7 @@
 /**
  * reader.ts — Spokn Reader page
  *
- * Lets the user paste text or load a PDF and have it read aloud.
+ * Lets the user paste text or load a PDF, DOCX, or TXT and have it read aloud.
  * PDF parsing uses pdfjs-dist bundled locally — only loaded when reader page is opened.
  * Settings are stored separately in chrome.storage.local under 'readerSettings'.
  */
@@ -1221,7 +1221,7 @@ function loadText(text: string, append = false): void {
   updateButtons();
   updateProgress();
   if (fullText) setStatus(append && trimmed ? `Appended — ${words.length} words total` : `${words.length} words loaded — ready to play`, 'success');
-  else          setStatus('Paste text or load a PDF to get started');
+  else          setStatus('Paste text or load a PDF, DOCX, or TXT to get started');
   persistText(fullText);
   // Update save button
   const saveBtn = document.getElementById('btn-save-to-library') as HTMLButtonElement | null;
@@ -1229,6 +1229,75 @@ function loadText(text: string, append = false): void {
 }
 
 // ─── PDF loading ──────────────────────────────────────────────────────────────
+
+// ─── DOCX loading ─────────────────────────────────────────────────────────────
+// A .docx is a ZIP archive. We parse it natively using DecompressionStream
+// (no library needed), then extract text from word/document.xml.
+
+async function extractTextFromDocx(file: File): Promise<string> {
+  setStatus('Parsing Word document...', 'info');
+  const buf  = await file.arrayBuffer();
+  const data = new Uint8Array(buf);
+  const enc  = new TextEncoder();
+  const sig  = new Uint8Array([0x50, 0x4B, 0x03, 0x04]);
+  const nameB = enc.encode('word/document.xml');
+
+  let xmlBytes: Uint8Array | null = null;
+
+  for (let i = 0; i < data.length - 30; i++) {
+    if (data[i] !== sig[0] || data[i+1] !== sig[1] || data[i+2] !== sig[2] || data[i+3] !== sig[3]) continue;
+
+    const compMethod = data[i+8]  | (data[i+9]  << 8);
+    const compSize   = data[i+18] | (data[i+19] << 8) | (data[i+20] << 16) | (data[i+21] << 24);
+    const uncompSize = data[i+22] | (data[i+23] << 8) | (data[i+24] << 16) | (data[i+25] << 24);
+    const fnLen      = data[i+26] | (data[i+27] << 8);
+    const extraLen   = data[i+28] | (data[i+29] << 8);
+    const fnBytes    = data.slice(i + 30, i + 30 + fnLen);
+
+    if (fnBytes.length !== nameB.length || !fnBytes.every((b, j) => b === nameB[j])) continue;
+
+    const dataStart  = i + 30 + fnLen + extraLen;
+    const compressed = data.slice(dataStart, dataStart + compSize);
+
+    if (compMethod === 0) {
+      xmlBytes = compressed;
+    } else {
+      // deflate-raw (method 8)
+      const ds     = new DecompressionStream('deflate-raw');
+      const writer = ds.writable.getWriter();
+      writer.write(compressed);
+      writer.close();
+      const reader = ds.readable.getReader();
+      const out    = new Uint8Array(uncompSize);
+      let   offset = 0;
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        out.set(value, offset);
+        offset += value.length;
+      }
+      xmlBytes = out;
+    }
+    break;
+  }
+
+  if (!xmlBytes) throw new Error('Could not find word/document.xml inside the .docx file.');
+
+  const xmlStr = new TextDecoder().decode(xmlBytes);
+  const doc    = new DOMParser().parseFromString(xmlStr, 'application/xml');
+
+  // Each <w:p> is a paragraph; collect text from all <w:t> nodes within it
+  const paragraphs = Array.from(doc.getElementsByTagNameNS('*', 'p'));
+  const lines: string[] = [];
+  for (const para of paragraphs) {
+    const texts = Array.from(para.getElementsByTagNameNS('*', 't'));
+    const line  = texts.map(t => t.textContent ?? '').join('');
+    if (line.trim()) lines.push(line.trim());
+  }
+
+  if (!lines.length) throw new Error('No readable text found in this Word document.');
+  return lines.join('\n\n');
+}
 
 // ─── PDF loading — lazy local import ─────────────────────────────────────────
 // pdfjs is dynamically imported so it's only loaded when a PDF is actually opened.
@@ -1313,13 +1382,20 @@ function handleFile(file: File): void {
       if (!text.trim()) { showError('No readable text in this PDF (may be image-based).'); return; }
       loadText(text, true);
     }).catch(e => showError(String(e)));
+  } else if (
+    file.type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' ||
+    file.name.toLowerCase().endsWith('.docx')
+  ) {
+    extractTextFromDocx(file).then(text => {
+      loadText(text, true);
+    }).catch(e => showError(String(e)));
   } else if (file.type.startsWith('text/') || file.name.match(/\.(txt|md|csv)$/i)) {
     const reader = new FileReader();
     reader.onload  = () => loadText(reader.result as string, true);
     reader.onerror = () => showError('Failed to read file.');
     reader.readAsText(file);
   } else {
-    showError(`Unsupported: ${file.type || file.name}. Use PDF, TXT, or MD.`);
+    showError(`Unsupported: ${file.type || file.name}. Use PDF, DOCX, TXT, or MD.`);
   }
 }
 
@@ -1365,7 +1441,10 @@ function renderVoiceList(): void {
   } else {
     const c = document.getElementById('vp-list-favs'); if (!c) return;
     c.innerHTML = '';
-    const fm = matched.filter(v => favoriteVoices.includes(v.name));
+    const favVoices = allVoices.filter(v => favoriteVoices.includes(v.name));
+    const fm = q ? favVoices.filter(v =>
+      v.name.toLowerCase().includes(q) || v.lang.toLowerCase().includes(q) ||
+      getLangLabel(v.lang).toLowerCase().includes(q)) : favVoices;
     if (!fm.length) { c.appendChild(emptyVoiceState(q ? `No favorites match "${q}"` : 'No favorites — star a voice on the All tab')); return; }
     fm.forEach(v => c.appendChild(voiceRow(v)));
   }
@@ -1531,7 +1610,7 @@ async function resetAllSettings(): Promise<void> {
   if (ta) ta.value = '';
   updateButtons();
   updateProgress();
-  setStatus('Paste text or load a PDF to get started');
+  setStatus('Paste text or load a PDF, DOCX, or TXT to get started');
   await applySettings({ ...DEFAULT_SETTINGS });
   renderVoiceList();
   showToast('Reset to defaults');
@@ -1832,7 +1911,7 @@ function buildUI(): void {
                 Save
               </button>
               <button id="btn-clear" class="action-btn action-btn-ghost">Clear</button>
-              <input id="file-input" type="file" accept=".pdf,.txt,.md,.csv" style="display:none" />
+              <input id="file-input" type="file" accept=".pdf,.docx,.txt,.md,.csv" style="display:none" />
             </div>
             <div class="panel-actions" id="panel-actions-reading" style="display:none">
               <button id="btn-edit-mode" class="btn-edit-mode">
@@ -1849,7 +1928,7 @@ function buildUI(): void {
             </div>
           </div>
 
-          <textarea id="text-input" placeholder="Paste or type your text here…&#10;&#10;Or drag and drop a PDF, TXT, or MD file." spellcheck="false"></textarea>
+          <textarea id="text-input" placeholder="Paste or type your text here…&#10;&#10;Or drag and drop a PDF, DOCX, TXT, or MD file." spellcheck="false"></textarea>
           <div id="spokn-display" class="spokn-display" style="display:none" aria-live="polite"></div>
           <div id="status" class="status status-info">Paste text or load a PDF to get started</div>
         </section>
