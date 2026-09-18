@@ -767,7 +767,20 @@ export class FloatingToolbar {
             const hostRect = this.host!.getBoundingClientRect();
             const panelH   = panel.offsetHeight;
             const vh       = window.innerHeight;
+            const vw       = window.innerWidth;
             const PADDING  = 8;
+
+            // Open to the right if toolbar is in the left half of the screen,
+            // otherwise open to the left (default).
+            const toolbarCenterX = hostRect.left + hostRect.width / 2;
+            if (toolbarCenterX < vw / 2) {
+              panel.style.right = '';
+              panel.style.left  = 'calc(100% + 10px)';
+            } else {
+              panel.style.left  = '';
+              panel.style.right = 'calc(100% + 10px)';
+            }
+
             let top = hostRect.top + (hostRect.height / 2) - (panelH / 2);
             top = Math.max(PADDING, Math.min(top, vh - panelH - PADDING));
             panel.style.top = `${top - hostRect.top}px`;
