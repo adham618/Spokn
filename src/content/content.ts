@@ -36,7 +36,6 @@ let clickToReadEnabled = false;
 let state: PlaybackState = { ...DEFAULT_STATE };
 let toolbarMounting = false;
 let currentTheme = DEFAULT_THEME_ID;
-let hoverBorderEnabled = true;
 let favoriteVoices: string[] = [];
 
 // Feature: auto-scroll
@@ -250,7 +249,6 @@ function buildToolbarState(): ToolbarState {
     wordIndex: state.wordIndex,
     totalWords: state.totalWords,
     highlightTheme: currentTheme,
-    hoverBorderEnabled,
     favoriteVoices,
     autoScroll: autoScrollEnabled,
     sleepTimerMinutes: state.sleepTimerMinutes,
@@ -331,17 +329,6 @@ function createToolbar(): FloatingToolbar {
         currentTheme = themeId;
         applyTheme(themeId);
         await chrome.storage.sync.set({ highlightTheme: themeId });
-      },
-      onHoverBorderToggle: async (enabled) => {
-        LOG('hoverBorderToggle:', enabled);
-        hoverBorderEnabled = enabled;
-        if (!enabled) {
-          if (lastHoveredClickable) {
-            lastHoveredClickable.classList.remove('spokn-clickable-hover');
-            lastHoveredClickable = null;
-          }
-        }
-        await chrome.storage.sync.set({ hoverBorderEnabled: enabled });
       },
       onReset: async () => {
         LOG('reset all settings');
@@ -702,7 +689,6 @@ function disableClickToRead(): void {
 }
 
 function onHover(e: MouseEvent): void {
-  if (!hoverBorderEnabled) return;
   const next = (e.target as Element).closest(CLICKABLE);
   if (lastHoveredClickable && lastHoveredClickable !== next) {
     lastHoveredClickable.classList.remove('spokn-clickable-hover');
@@ -855,7 +841,6 @@ async function resetAllSettings(): Promise<void> {
   state.volume       = DEFAULT_STATE.volume;
   state.mode         = DEFAULT_STATE.mode;
   state.autoScroll   = DEFAULT_STATE.autoScroll;
-  hoverBorderEnabled = true;
   favoriteVoices     = [];
   currentTheme       = DEFAULT_THEME_ID;
   autoScrollEnabled  = true;
@@ -1180,7 +1165,7 @@ chrome.runtime.onMessage.addListener(
     await loadSiteSettings();
     const stored = await chrome.storage.sync.get([
       'voiceName', 'rate', 'pitch', 'volume', 'mode',
-      'highlightTheme', 'hoverBorderEnabled', 'favoriteVoices',
+      'highlightTheme', 'favoriteVoices',
       'autoScroll',
     ]);
     if (stored.voiceName) state.voiceName = stored.voiceName as string;
@@ -1188,7 +1173,6 @@ chrome.runtime.onMessage.addListener(
     if (stored.pitch  != null) state.pitch  = stored.pitch  as number;
     if (stored.volume != null) state.volume = stored.volume as number;
     if (stored.mode) state.mode = stored.mode as typeof state.mode;
-    if (stored.hoverBorderEnabled != null) hoverBorderEnabled = stored.hoverBorderEnabled as boolean;
     if (Array.isArray(stored.favoriteVoices)) favoriteVoices = stored.favoriteVoices as string[];
     if (stored.autoScroll != null) {
       autoScrollEnabled = stored.autoScroll as boolean;

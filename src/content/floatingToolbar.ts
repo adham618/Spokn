@@ -21,7 +21,6 @@ export interface ToolbarCallbacks {
   onVolumeChange: (volume: number) => void;
   onModeChange: (mode: 'selection' | 'page' | 'click') => void;
   onThemeChange: (themeId: string) => void;
-  onHoverBorderToggle: (enabled: boolean) => void;
   onReset: () => void;
   onFavoritesChange: (favorites: string[]) => void;
   /** Optional getter so populateVoices can read the live voice name from content.ts */
@@ -48,9 +47,7 @@ export interface ToolbarState {
   wordIndex: number;
   totalWords: number;
   highlightTheme: string;
-  hoverBorderEnabled: boolean;
   favoriteVoices: string[];
-  // New features
   autoScroll: boolean;
   sleepTimerMinutes: number;
   sleepTimerEndsAt: number;
@@ -582,16 +579,6 @@ export class FloatingToolbar {
             </div>
           </div>
 
-          <div class="settings-row">
-            <span class="settings-label">Border</span>
-            <label class="toggle-wrap" title="Show hover border around paragraphs">
-              <input type="checkbox" id="spokn-hover-border-toggle"
-                ${this.st.hoverBorderEnabled ? 'checked' : ''}
-                aria-label="Show hover border">
-              <span class="toggle-track"><span class="toggle-thumb"></span></span>
-              <span class="toggle-label">Paragraph hover border</span>
-            </label>
-          </div>
         </div>
 
         <div class="settings-section">
@@ -867,13 +854,6 @@ export class FloatingToolbar {
         });
         this.cb.onThemeChange(themeId);
       });
-    });
-
-    // Hover border toggle
-    s.getElementById('spokn-hover-border-toggle')?.addEventListener('change', (e) => {
-      const enabled = (e.target as HTMLInputElement).checked;
-      this.st.hoverBorderEnabled = enabled;
-      this.cb.onHoverBorderToggle(enabled);
     });
 
     s.getElementById('spokn-reset-btn')?.addEventListener('click', () => {
