@@ -39,14 +39,6 @@
   border-radius: 4px;
 }
 
-/* ── Click-to-read hover outline ─────────────────────────────────────────── */
-.spokn-clickable-hover {
-  outline: none !important;
-  border: none !important;
-  box-shadow: none !important;
-  cursor: pointer !important;
-}
-
 /* ── Word hover highlight ────────────────────────────────────────────────── */
 /* Only show hover highlight when a theme is actually set (not 'none').
    When --spokn-word-bg is transparent the highlight would be invisible anyway,

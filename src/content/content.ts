@@ -694,15 +694,12 @@ function onHover(e: MouseEvent): void {
     lastHoveredClickable.classList.remove('spokn-clickable-hover');
   }
   lastHoveredClickable = next ?? null;
-  next?.classList.add('spokn-clickable-hover');
 }
 
-function onHoverOut(e: MouseEvent): void {
-  const related = (e as MouseEvent).relatedTarget as Element | null;
-  const highlighted = (e.target as Element).closest(CLICKABLE) as Element | null;
-  if (highlighted && (!related || !highlighted.contains(related))) {
-    highlighted.classList.remove('spokn-clickable-hover');
-    if (lastHoveredClickable === highlighted) lastHoveredClickable = null;
+function onHoverOut(_e: MouseEvent): void {
+  if (lastHoveredClickable) {
+    lastHoveredClickable.classList.remove('spokn-clickable-hover');
+    lastHoveredClickable = null;
   }
 }
 
