@@ -10,7 +10,7 @@ Offline text-to-speech Chrome extension with word-by-word highlighting. Reads an
 
 - **Word-by-word highlighting** — each word is highlighted precisely as it's spoken, Speechify-style
 - **Three reading modes** — Full Page, Selected Text, or click any paragraph to start from there
-- **Skip sentences** — ⏮ ⏭ buttons in the toolbar to jump forward or back by sentence
+- **Skip sentences** — use `←` `→` arrow keys while playing to jump forward or back by sentence
 - **Reading position memory** — resumes from where you left off on any page
 - **Auto-scroll** — page scrolls to keep the current sentence in view (toggleable)
 - **Sleep timer** — automatically stops reading after 5 / 10 / 15 / 30 / 60 minutes, with live mm:ss countdown
