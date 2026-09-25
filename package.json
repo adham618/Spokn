@@ -1,6 +1,6 @@
 {
   "name": "spokn",
-  "version": "2.2.3",
+  "version": "2.2.4",
   "description": "Offline text-to-speech Chrome extension with word-by-word highlighting",
   "private": true,
   "type": "module",

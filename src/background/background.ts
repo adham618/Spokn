@@ -39,7 +39,17 @@ async function sendToTab(tabId: number, message: Message): Promise<MessageRespon
 /** Returns true for tabs where the content script can legitimately run. */
 function isInjectableTab(tab: chrome.tabs.Tab): boolean {
   const url = tab.url ?? tab.pendingUrl ?? '';
-  return url.startsWith('http://') || url.startsWith('https://') || url.startsWith('file://');
+  if (!url.startsWith('http://') && !url.startsWith('https://') && !url.startsWith('file://')) return false;
+  // Chrome blocks content scripts on these domains regardless of manifest permissions
+  const blocked = [
+    'chrome.google.com',
+    'chromewebstore.google.com',
+  ];
+  try {
+    const host = new URL(url).hostname;
+    if (blocked.some(b => host === b || host.endsWith('.' + b))) return false;
+  } catch { /* ignore */ }
+  return true;
 }
 
 chrome.action.onClicked.addListener(async (tab) => {
