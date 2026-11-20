@@ -7,6 +7,10 @@
  */
 
 import { HIGHLIGHT_THEMES } from '../content/highlightTheme.js';
+import type { NeuralTTSEvent } from '../content/neuralTts.js';
+import { downloadEngine, getEngineState, isAIModelReady, NeuralTTS, onAIModelReady, preloadKokoro } from '../content/neuralTts.js';
+import type { NeuralVoice } from '../content/neuralVoices.js';
+import { ALL_NEURAL_VOICES, getNeuralVoice, isNeuralVoiceId } from '../content/neuralVoices.js';
 
 // ─── Reading themes ───────────────────────────────────────────────────────────
 
@@ -371,9 +375,12 @@ let utterances: SpeechSynthesisUtterance[] = [];
 let currentUtteranceIdx = 0;
 let isPlaying  = false;
 let isPaused   = false;
+let isLoading  = false;
 let allVoices: SpeechSynthesisVoice[] = [];
 let favoriteVoices: string[] = [];
 let selectedVoice = '';
+let neuralTts: NeuralTTS | null = null;
+let previewingVoiceId: string | null = null;
 
 // ─── Tip jar ─────────────────────────────────────────────────────────────────
 const TIP_WORDS_THRESHOLD = 3000;  // words read in a session before showing
@@ -850,12 +857,12 @@ function onWordClick(e: Event): void {
   if (!span) return;
   const idx = parseInt(span.dataset.idx ?? '0', 10);
 
-  // Cancel speech and reset playback state — but do NOT call stopAll() because
-  // that tears down the display DOM (exitReadingMode), causing the visible flash
-  // and scroll-to-top before playFrom re-renders everything from scratch.
+  // Cancel speech and reset playback state
   speechSynthesis.cancel();
   utterances = [];
   currentUtteranceIdx = 0;
+  neuralTts?.destroy();
+  neuralTts = null;
   isPlaying = false;
   isPaused  = false;
   pauseSleepTimer();
@@ -994,6 +1001,8 @@ function stopAll(clearPosition = false): void {
   speechSynthesis.cancel();
   utterances = [];
   currentUtteranceIdx = 0;
+  neuralTts?.destroy();
+  neuralTts = null;
   isPlaying = false;
   isPaused  = false;
   wordIndex = 0;
@@ -1008,19 +1017,123 @@ function playFrom(startIdx: number): void {
   speechSynthesis.cancel();
   utterances = [];
   currentUtteranceIdx = 0;
+  neuralTts?.destroy();
+  neuralTts = null;
+  // Cancel any preview
+  if (readerPreviewNeuralTTS) { readerPreviewNeuralTTS.destroy(); readerPreviewNeuralTTS = null; }
+  if (previewingVoiceId) { previewingVoiceId = null; renderVoiceList(); }
   isPlaying = true;
   isPaused  = false;
+  isLoading = false;
   wordIndex = startIdx;
 
-  // Only rebuild the reading display if we're not already in reading mode.
-  // When seeking by word-click the display is already live — rebuilding it
-  // causes the flash/scroll-to-top bug.
   const dp = document.getElementById('spokn-display');
   const alreadyInReadingMode = dp?.style.display !== 'none' && dp !== null;
   if (!alreadyInReadingMode) enterReadingMode();
 
   startSleepTimer();
 
+  // ── Neural voice path ───────────────────────────────────────────────────────
+  if (isNeuralVoiceId(selectedVoice)) {
+    const neuralVoice = getNeuralVoice(selectedVoice);
+    if (!neuralVoice) { stopAll(); showError('Neural voice not found — please select another.'); return; }
+
+    // Build WordNode-compatible objects from TTSWord[]
+    // Use actual DOM spans that are rendered in the display for proper highlighting
+    const dp = document.getElementById('spokn-display');
+    const wordNodes = words.map((w, i) => {
+      // Try to get the actual span from DOM; fall back to placeholder if not yet rendered
+      let span = dp?.querySelector<HTMLSpanElement>(`.reader-word[data-idx="${i}"]`);
+      if (!span) {
+        span = document.createElement('span');
+        span.className = 'reader-word';
+        span.setAttribute('data-idx', String(i));
+        span.textContent = w.word;
+      }
+      return {
+        word: w.word, sentenceIndex: 0,
+        span,
+        startOffset: w.charStart, endOffset: w.charEnd, globalIndex: i,
+      };
+    });
+
+    neuralTts = new NeuralTTS(neuralVoice, { rate, volume });
+
+    neuralTts.on((event: NeuralTTSEvent) => {
+      switch (event.type) {
+        case 'loading':
+          isLoading = true;
+          updateButtons();
+          // Don't show "Synthesizing..." text during synthesis, button spinner is enough
+          break;
+
+        case 'start':
+          isLoading = false;
+          updateButtons();
+          hideNeuralProgress();
+          break;
+
+        case 'word': {
+          const idx = event.wordIndex ?? 0;
+          wordIndex = idx;
+          highlightWord(idx);
+          updateProgress();
+          persistWordIndex(idx);
+          wordsReadInSession++;
+          if (wordsReadInSession >= TIP_WORDS_THRESHOLD) {
+            shouldShowTip().then(show => { if (show) { markTipShown(); showTipBanner(); } });
+          }
+          break;
+        }
+        case 'end':
+          hideNeuralProgress();
+          isLoading = false;
+          neuralTts = null;
+          isPlaying = false;
+          isPaused  = false;
+          pauseSleepTimer();
+          exitReadingMode();
+          updateButtons();
+          updateProgress();
+          saveStoredSettings({ wordIndex: 0 });
+          break;
+        case 'stop':
+          hideNeuralProgress();
+          isLoading = false;
+          neuralTts = null;
+          isPlaying = false;
+          isPaused  = false;
+          updateButtons();
+          break;
+        case 'error':
+          hideNeuralProgress();
+          isLoading = false;
+          neuralTts = null;
+          isPlaying = false;
+          isPaused  = false;
+          updateButtons();
+          showError('Neural voice error. Try a different voice.');
+          break;
+      }
+    });
+
+    neuralTts.play(wordNodes, startIdx, (p: { status: 'downloading' | 'ready'; percent: number; label: string }) => {
+      if (p.status === 'downloading') showNeuralProgress(p.label, p.percent);
+      else hideNeuralProgress();
+    }).catch((e: unknown) => {
+      hideNeuralProgress();
+      neuralTts = null;
+      isPlaying = false;
+      isPaused  = false;
+      updateButtons();
+      showError('Neural voice playback failed: ' + String(e));
+    });
+
+    updateButtons();
+    return;
+  }
+
+  // ── Web Speech API path ─────────────────────────────────────────────────────
   const chunks = chunkWords(words.slice(startIdx));
   if (chunks.length === 0) { stopAll(); return; }
 
@@ -1047,7 +1160,6 @@ function playFrom(startIdx: number): void {
       highlightWord(wordIndex);
       updateProgress();
       persistWordIndex(wordIndex);
-      // Tip jar — count words read this session
       wordsReadInSession++;
       if (wordsReadInSession >= TIP_WORDS_THRESHOLD) {
         shouldShowTip().then(show => { if (show) { markTipShown(); showTipBanner(); } });
@@ -1055,7 +1167,7 @@ function playFrom(startIdx: number): void {
     };
     utt.onend = () => {
       currentUtteranceIdx++;
-      if (currentUtteranceIdx >= utterances.length) stopAll(true); // finished naturally — clear saved position
+      if (currentUtteranceIdx >= utterances.length) stopAll(true);
     };
     utt.onerror = (e) => {
       if (e.error === 'interrupted' || e.error === 'canceled') return;
@@ -1070,7 +1182,11 @@ function playFrom(startIdx: number): void {
 
 function pause(): void {
   if (!isPlaying || isPaused) return;
-  speechSynthesis.pause();
+  if (neuralTts) {
+    neuralTts.pause();
+  } else {
+    speechSynthesis.pause();
+  }
   isPaused = true; isPlaying = false;
   pauseSleepTimer();
   updateButtons();
@@ -1078,9 +1194,13 @@ function pause(): void {
 
 function resume(): void {
   if (!isPaused) return;
-  speechSynthesis.resume();
+  if (neuralTts) {
+    neuralTts.resume();
+  } else {
+    speechSynthesis.resume();
+    enterReadingMode();
+  }
   isPaused = false; isPlaying = true;
-  enterReadingMode();
   runSleepTimer();
   updateButtons();
 }
@@ -1092,12 +1212,11 @@ function restartFromCurrentWord(): void {
   speechSynthesis.cancel();
   utterances = [];
   currentUtteranceIdx = 0;
+  neuralTts?.destroy();
+  neuralTts = null;
   isPlaying = false;
   isPaused  = false;
-  // Small delay to let the engine settle after cancel
-  setTimeout(() => {
-    playFrom(idx);
-  }, 150);
+  setTimeout(() => { playFrom(idx); }, 150);
 }
 
 function skipSentence(dir: 'prev' | 'next'): void {
@@ -1107,7 +1226,10 @@ function skipSentence(dir: 'prev' | 'next'): void {
     ? Math.min(words.length - 1, wordIndex + STEP)
     : Math.max(0, wordIndex - STEP);
   const wasActive = isPlaying || isPaused;
-  stopAll();
+  speechSynthesis.cancel();
+  neuralTts?.destroy(); neuralTts = null;
+  utterances = []; currentUtteranceIdx = 0;
+  isPlaying = false; isPaused = false;
   wordIndex = target;
   if (wasActive) playFrom(target);
 }
@@ -1138,7 +1260,10 @@ function skipParagraph(dir: 'prev' | 'next'): void {
   }
 
   const wasActive = isPlaying || isPaused;
-  stopAll();
+  speechSynthesis.cancel();
+  neuralTts?.destroy(); neuralTts = null;
+  utterances = []; currentUtteranceIdx = 0;
+  isPlaying = false; isPaused = false;
   wordIndex = target;
   if (wasActive) playFrom(target);
 }
@@ -1147,6 +1272,7 @@ function skipParagraph(dir: 'prev' | 'next'): void {
 
 const ICON_PLAY  = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="8 4.5 11.75 15" aria-hidden="true" style="transform:translateX(2px)"><path d="M8 5.5v13a1 1 0 0 0 1.53.85l9.75-6.5a1 1 0 0 0 0-1.7l-9.75-6.5A1 1 0 0 0 8 5.5Z"/></svg>`;
 const ICON_PAUSE = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="4.5 0 27 36" aria-hidden="true"><path d="M9,0A4.50022,4.50022,0,0,0,4.5,4.5v27a4.5,4.5,0,0,0,9,0V4.5A4.50022,4.50022,0,0,0,9,0Z"/><path d="M27,0a4.50022,4.50022,0,0,0-4.5,4.5v27a4.5,4.5,0,0,0,9,0V4.5A4.50022,4.50022,0,0,0,27,0Z"/></svg>`;
+const ICON_LOADING = `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" aria-hidden="true" style="animation:spokn-spin 0.75s linear infinite"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-opacity="0.25"/><path d="M12 3a9 9 0 0 1 9 9"/></svg>`;
 const ICON_SKIP_NEXT = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="10 25 80 50" width="14" height="14" fill="currentColor" aria-hidden="true"><path d="M74.22 45.88 43.49 25.61a4.03 4.03 0 0 0-3.75-.12c-1.38.8-2.23 2.42-2.23 4.24v10.08l-21.52-14.2a4.03 4.03 0 0 0-3.75-.12c-1.38.8-2.23 2.42-2.23 4.24v40.55c0 1.82.86 3.44 2.23 4.24a4.03 4.03 0 0 0 3.75-.12l21.52-14.2v10.08c0 1.82.86 3.44 2.23 4.24.61.41 1.29.61 1.97.61s1.36-.2 1.97-.61l30.73-20.27c1.28-.84 2.04-2.38 2.04-4.12s-.76-3.28-2.04-4.12Z"/><path d="M83.72 25c-3.46 0-6.28 2.96-6.28 6.6v36.8c0 3.64 2.82 6.6 6.28 6.6S90 72.04 90 68.4V31.6c0-3.64-2.82-6.6-6.28-6.6Z"/></svg>`;
 const ICON_SKIP_PREV = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="10 25 80 50" width="14" height="14" fill="currentColor" aria-hidden="true" style="transform:scaleX(-1)"><path d="M74.22 45.88 43.49 25.61a4.03 4.03 0 0 0-3.75-.12c-1.38.8-2.23 2.42-2.23 4.24v10.08l-21.52-14.2a4.03 4.03 0 0 0-3.75-.12c-1.38.8-2.23 2.42-2.23 4.24v40.55c0 1.82.86 3.44 2.23 4.24a4.03 4.03 0 0 0 3.75-.12l21.52-14.2v10.08c0 1.82.86 3.44 2.23 4.24.61.41 1.29.61 1.97.61s1.36-.2 1.97-.61l30.73-20.27c1.28-.84 2.04-2.38 2.04-4.12s-.76-3.28-2.04-4.12Z"/><path d="M83.72 25c-3.46 0-6.28 2.96-6.28 6.6v36.8c0 3.64 2.82 6.6 6.28 6.6S90 72.04 90 68.4V31.6c0-3.64-2.82-6.6-6.28-6.6Z"/></svg>`;
 
@@ -1158,8 +1284,13 @@ function updateButtons(): void {
   const next = $<HTMLButtonElement>('#btn-skip-next');
   if (pp) {
     pp.disabled = words.length === 0;
-    pp.innerHTML = isPlaying ? ICON_PAUSE : ICON_PLAY;
-    pp.setAttribute('aria-label', isPlaying ? 'Pause' : isPaused ? 'Resume' : 'Play');
+    if (isLoading) {
+      pp.innerHTML = ICON_LOADING;
+      pp.setAttribute('aria-label', 'Loading...');
+    } else {
+      pp.innerHTML = isPlaying ? ICON_PAUSE : ICON_PLAY;
+      pp.setAttribute('aria-label', isPlaying ? 'Pause' : isPaused ? 'Resume' : 'Play');
+    }
   }
   if (prev) prev.disabled = words.length === 0;
   if (next) next.disabled = words.length === 0;
@@ -1421,31 +1552,139 @@ function setVoiceTab(tab: 'all' | 'favs'): void {
 }
 
 function renderVoiceList(): void {
-  if (allVoices.length === 0) return;
   const q = getVoiceQuery();
   const matched = q ? allVoices.filter(v =>
     v.name.toLowerCase().includes(q) || v.lang.toLowerCase().includes(q) ||
     getLangLabel(v.lang).toLowerCase().includes(q)) : allVoices;
   const countEl = document.getElementById('vp-fav-count');
   if (countEl) countEl.textContent = favoriteVoices.length > 0 ? ` (${favoriteVoices.length})` : '';
+
   if (activeVoiceTab === 'all') {
     const c = document.getElementById('vp-list-all'); if (!c) return;
     c.innerHTML = '';
-    if (!matched.length) { c.appendChild(emptyVoiceState(q ? `No voices match "${q}"` : 'No voices')); return; }
-    const groups = new Map<string, SpeechSynthesisVoice[]>();
-    matched.forEach(v => { if (!groups.has(v.lang)) groups.set(v.lang, []); groups.get(v.lang)!.push(v); });
-    Array.from(groups.entries()).sort(([a],[b]) => getLangLabel(a).localeCompare(getLangLabel(b))).forEach(([tag, vs]) => {
-      const hdr = document.createElement('div'); hdr.className = 'vp-group-header'; hdr.textContent = getLangLabel(tag); c.appendChild(hdr);
-      vs.forEach(v => c.appendChild(voiceRow(v)));
-    });
+
+    // ── Neural voices section ───────────────────────────────────────────────
+    const neuralMatched = q
+      ? ALL_NEURAL_VOICES.filter(v =>
+          v.name.toLowerCase().includes(q) ||
+          v.langLabel.toLowerCase().includes(q) ||
+          v.lang.toLowerCase().includes(q))
+      : ALL_NEURAL_VOICES;
+
+    if (neuralMatched.length > 0) {
+      if (!isAIModelReady()) {
+        // Show download card only if not dismissed
+        if (!readerAIVoicesDismissed) {
+          c.appendChild(buildReaderDownloadCard());
+        }
+      } else {
+        // Show neural voices with collapse header
+        const neuralHdr = document.createElement('div');
+        neuralHdr.className = 'vp-group-header vp-group-header-neural';
+
+        const headerContent = document.createElement('div');
+        headerContent.style.display = 'flex';
+        headerContent.style.alignItems = 'center';
+        headerContent.style.gap = '6px';
+        headerContent.style.flex = '1';
+        headerContent.style.cursor = 'pointer';
+        headerContent.style.userSelect = 'none';
+
+        const title = document.createElement('span');
+        title.textContent = '✦ AI Voices';
+        headerContent.appendChild(title);
+
+        const badge = document.createElement('span');
+        badge.className = 'vp-neural-badge';
+        badge.textContent = 'Offline · AI';
+        headerContent.appendChild(badge);
+
+        const collapseBtn = document.createElement('button');
+        collapseBtn.className = 'vp-collapse-btn';
+        collapseBtn.innerHTML = readerAIVoicesCollapsed
+          ? '<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"/></svg>'
+          : '<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="18 15 12 9 6 15"/></svg>';
+        collapseBtn.setAttribute('aria-label', readerAIVoicesCollapsed ? 'Expand AI voices' : 'Collapse AI voices');
+        collapseBtn.setAttribute('title', readerAIVoicesCollapsed ? 'Expand' : 'Collapse');
+        collapseBtn.style.marginLeft = 'auto';
+
+        neuralHdr.appendChild(headerContent);
+        neuralHdr.appendChild(collapseBtn);
+
+        collapseBtn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          readerAIVoicesCollapsed = !readerAIVoicesCollapsed;
+          saveReaderAIVoicesCollapsed(readerAIVoicesCollapsed);
+          renderVoiceList();
+        });
+
+        headerContent.addEventListener('click', (e) => {
+          e.stopPropagation();
+          readerAIVoicesCollapsed = !readerAIVoicesCollapsed;
+          saveReaderAIVoicesCollapsed(readerAIVoicesCollapsed);
+          renderVoiceList();
+        });
+
+        c.appendChild(neuralHdr);
+
+        // Render neural voices only if not collapsed
+        if (!readerAIVoicesCollapsed) {
+          const neuralGroups = new Map<string, NeuralVoice[]>();
+          for (const v of neuralMatched) {
+            if (!neuralGroups.has(v.langLabel)) neuralGroups.set(v.langLabel, []);
+            neuralGroups.get(v.langLabel)!.push(v);
+          }
+          for (const [label, voices] of neuralGroups) {
+            const sub = document.createElement('div');
+            sub.className = 'vp-group-subheader';
+            sub.textContent = label;
+            c.appendChild(sub);
+            voices.forEach(v => c.appendChild(neuralVoiceRow(v)));
+          }
+        }
+      }
+    }
+
+    // ── System voices section ────────────────────────────────────────────────
+    if (matched.length === 0 && neuralMatched.length === 0) {
+      c.appendChild(emptyVoiceState(q ? `No voices match "${q}"` : 'No voices'));
+      return;
+    }
+    if (matched.length > 0) {
+      const sysHdr = document.createElement('div');
+      sysHdr.className = 'vp-group-header';
+      sysHdr.textContent = 'System Voices';
+      c.appendChild(sysHdr);
+      const groups = new Map<string, SpeechSynthesisVoice[]>();
+      matched.forEach(v => { if (!groups.has(v.lang)) groups.set(v.lang, []); groups.get(v.lang)!.push(v); });
+      Array.from(groups.entries()).sort(([a],[b]) => getLangLabel(a).localeCompare(getLangLabel(b))).forEach(([tag, vs]) => {
+        const hdr = document.createElement('div');
+        hdr.className = 'vp-group-subheader';
+        hdr.textContent = getLangLabel(tag);
+        c.appendChild(hdr);
+        vs.forEach(v => c.appendChild(voiceRow(v)));
+      });
+    }
   } else {
     const c = document.getElementById('vp-list-favs'); if (!c) return;
     c.innerHTML = '';
+
+    // Neural favorites
+    const neuralFavs = ALL_NEURAL_VOICES.filter(v => {
+      if (!favoriteVoices.includes(v.id)) return false;
+      if (!q) return true;
+      return v.name.toLowerCase().includes(q) || v.langLabel.toLowerCase().includes(q);
+    });
     const favVoices = allVoices.filter(v => favoriteVoices.includes(v.name));
     const fm = q ? favVoices.filter(v =>
       v.name.toLowerCase().includes(q) || v.lang.toLowerCase().includes(q) ||
       getLangLabel(v.lang).toLowerCase().includes(q)) : favVoices;
-    if (!fm.length) { c.appendChild(emptyVoiceState(q ? `No favorites match "${q}"` : 'No favorites — star a voice on the All tab')); return; }
+
+    if (!neuralFavs.length && !fm.length) {
+      c.appendChild(emptyVoiceState(q ? `No favorites match "${q}"` : 'No favorites — star a voice on the All tab'));
+      return;
+    }
+    neuralFavs.forEach(v => c.appendChild(neuralVoiceRow(v)));
     fm.forEach(v => c.appendChild(voiceRow(v)));
   }
   updateSelectedMeta();
@@ -1460,14 +1699,108 @@ function voiceRow(v: SpeechSynthesisVoice): HTMLElement {
   const info = document.createElement('div'); info.className = 'vp-row-info';
   const name = document.createElement('span'); name.className = 'vp-row-name'; name.textContent = v.name; info.appendChild(name);
   if (!v.localService) { const b = document.createElement('span'); b.className = 'vp-badge-cloud'; b.textContent = '☁'; info.appendChild(b); }
+
+  const preview = document.createElement('button');
+  preview.className = 'vp-preview-btn' + (previewingVoiceId === v.name ? ' vp-preview-active' : '');
+  preview.textContent = previewingVoiceId === v.name ? '■' : '▶';
+  preview.setAttribute('aria-label', 'Preview voice');
+  preview.title = 'Preview this voice';
+  preview.dataset.previewId = v.name;
+
   const star = document.createElement('button');
   star.className = 'vp-star' + (isFav ? ' vp-star-active' : '');
   star.textContent = isFav ? '★' : '☆';
   star.setAttribute('aria-label', isFav ? `Unpin ${v.name}` : `Pin ${v.name}`);
   star.dataset.voiceStar = v.name;
-  row.appendChild(info); row.appendChild(star);
-  row.addEventListener('click', (e) => { if ((e.target as HTMLElement).dataset.voiceStar) return; selectVoice(v.name); });
+  row.appendChild(info); row.appendChild(preview); row.appendChild(star);
+
+  row.addEventListener('click', (e) => {
+    const t = e.target as HTMLElement;
+    if (t.dataset.voiceStar || t.dataset.previewId) return;
+    selectVoice(v.name);
+  });
+  preview.addEventListener('click', (e) => {
+    e.stopPropagation();
+    readerPreviewVoice(previewingVoiceId === v.name ? null : v.name);
+  });
   star.addEventListener('click', (e) => { e.stopPropagation(); toggleFav(v.name); });
+  return row;
+}
+
+function neuralVoiceRow(v: NeuralVoice): HTMLElement {
+  const isSel = v.id === selectedVoice;
+  const isFav = favoriteVoices.includes(v.id);
+  const isReady = getEngineState(v.engine) === 'ready';
+
+  const row = document.createElement('div');
+  row.className = 'vp-row vp-row-neural' + (isSel ? ' vp-row-selected' : '');
+  row.setAttribute('role','option'); row.setAttribute('aria-selected', String(isSel)); row.dataset.voice = v.id;
+  const info = document.createElement('div'); info.className = 'vp-row-info';
+  const name = document.createElement('span'); name.className = 'vp-row-name'; name.textContent = v.name; info.appendChild(name);
+  const badge = document.createElement('span'); badge.className = 'vp-badge-neural';
+  badge.textContent = 'Kokoro'; info.appendChild(badge);
+  if (v.grade === 'A') { const g = document.createElement('span'); g.className = 'vp-badge-grade'; g.textContent = '★'; info.appendChild(g); }
+
+  // If not downloaded — show Download button, disable row selection
+  if (!isReady) {
+    const dlBtn = document.createElement('button');
+    dlBtn.className = 'vp-download-btn';
+    dlBtn.textContent = '↓ Download';
+    dlBtn.title = 'Download AI voices (one-time)';
+    dlBtn.dataset.downloadEngine = v.engine;
+
+    row.appendChild(info);
+    row.appendChild(dlBtn);
+
+    row.addEventListener('click', (e) => {
+      const t = e.target as HTMLElement;
+      if (t.dataset.downloadEngine) return;
+      showToast('Download AI voices first');
+    });
+
+    dlBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      dlBtn.disabled = true;
+      dlBtn.textContent = 'Downloading…';
+      downloadEngine(v.engine, (p: { status: 'downloading'|'ready'; percent: number; label: string; totalMB?: number }) => {
+        if (p.status === 'downloading') {
+          const mb = p.totalMB ? ` / ${p.totalMB} MB` : '';
+          dlBtn.textContent = `${p.percent}%${mb}`;
+        } else {
+          // Ready — re-render the voice list so download button is replaced
+          renderVoiceList();
+        }
+      });
+    });
+
+    return row;
+  }
+
+  // Downloaded — show preview + star buttons normally
+  const preview = document.createElement('button');
+  preview.className = 'vp-preview-btn' + (previewingVoiceId === v.id ? ' vp-preview-active' : '');
+  preview.textContent = previewingVoiceId === v.id ? '■' : '▶';
+  preview.setAttribute('aria-label', 'Preview voice');
+  preview.title = 'Preview this voice';
+  preview.dataset.previewId = v.id;
+
+  const star = document.createElement('button');
+  star.className = 'vp-star' + (isFav ? ' vp-star-active' : '');
+  star.textContent = isFav ? '★' : '☆';
+  star.setAttribute('aria-label', isFav ? `Unpin ${v.name}` : `Pin ${v.name}`);
+  star.dataset.voiceStar = v.id;
+  row.appendChild(info); row.appendChild(preview); row.appendChild(star);
+
+  row.addEventListener('click', (e) => {
+    const t = e.target as HTMLElement;
+    if (t.dataset.voiceStar || t.dataset.previewId) return;
+    selectVoice(v.id);
+  });
+  preview.addEventListener('click', (e) => {
+    e.stopPropagation();
+    readerPreviewVoice(previewingVoiceId === v.id ? null : v.id);
+  });
+  star.addEventListener('click', (e) => { e.stopPropagation(); toggleFav(v.id); });
   return row;
 }
 
@@ -1475,9 +1808,69 @@ function emptyVoiceState(msg: string): HTMLElement {
   const el = document.createElement('div'); el.className = 'vp-empty'; el.textContent = msg; return el;
 }
 
+function buildReaderDownloadCard(): HTMLElement {
+  const card = document.createElement('div');
+  card.className = 'vp-ai-card';
+
+  card.innerHTML = `
+    <div class="vp-ai-card-header">
+      <span class="vp-ai-card-icon">✦</span>
+      <span class="vp-ai-card-title">AI Voices</span>
+      <span class="vp-neural-badge">Offline · AI</span>
+      <button class="vp-ai-card-close" aria-label="Dismiss AI voices" title="Dismiss">✕</button>
+    </div>
+    <p class="vp-ai-card-desc">
+      13 high-quality neural voices that run entirely on your device.
+      One-time download — works offline forever after. Or skip this and use your system voices (scroll down to see them).
+    </p>
+    <button class="vp-ai-dl-btn" id="vp-ai-dl-btn-reader">
+      Download AI Voices
+    </button>
+    <div class="vp-ai-progress" id="vp-ai-progress-reader" style="display:none">
+      <div class="vp-ai-progress-bar-wrap">
+        <div class="vp-ai-progress-fill" id="vp-ai-progress-fill-reader"></div>
+      </div>
+      <span class="vp-ai-progress-label" id="vp-ai-progress-label-reader">Starting…</span>
+    </div>
+  `;
+
+  const closeBtn  = card.querySelector<HTMLButtonElement>('.vp-ai-card-close')!;
+  const btn      = card.querySelector<HTMLButtonElement>('#vp-ai-dl-btn-reader')!;
+  const progress = card.querySelector<HTMLElement>('#vp-ai-progress-reader')!;
+  const fill     = card.querySelector<HTMLElement>('#vp-ai-progress-fill-reader')!;
+  const label    = card.querySelector<HTMLElement>('#vp-ai-progress-label-reader')!;
+
+  closeBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    readerAIVoicesDismissed = true;
+    saveReaderAIVoicesDismissed(true);
+    renderVoiceList();
+    showToast('AI voices dismissed — reset to show again');
+  });
+
+  btn.addEventListener('click', () => {
+    btn.style.display = 'none';
+    progress.style.display = 'block';
+
+    downloadEngine('kokoro', (p: { status: 'downloading'|'ready'; percent: number; label: string; totalMB?: number }) => {
+      if (p.status === 'downloading') {
+        const pct   = p.percent;
+        const mbStr = p.totalMB ? ` of ${p.totalMB} MB` : '';
+        fill.style.width   = `${pct}%`;
+        label.textContent  = `${pct}%${mbStr}`;
+      } else {
+        // ready — voice list will re-render
+        fill.style.width  = '100%';
+        label.textContent = 'Done!';
+      }
+    });
+  });
+
+  return card;
+}
+
 function selectVoice(name: string): void {
   selectedVoice = name;
-  // Persist to chrome.storage.sync — same key used by the floating toolbar and popup
   chrome.storage.sync.set({ voiceName: name }).catch(() => {});
   document.querySelectorAll<HTMLElement>('.vp-row').forEach(r => {
     const active = r.dataset.voice === name;
@@ -1491,12 +1884,17 @@ function selectVoice(name: string): void {
 
 function toggleFav(name: string): void {
   favoriteVoices = favoriteVoices.includes(name) ? favoriteVoices.filter(n => n !== name) : [...favoriteVoices, name];
-  // Persist to chrome.storage.sync — same key used by the toolbar and popup
   chrome.storage.sync.set({ favoriteVoices }).catch(() => {});
   renderVoiceList();
 }
 
 function updateSelectedMeta(): void {
+  if (isNeuralVoiceId(selectedVoice)) {
+    const nv = ALL_NEURAL_VOICES.find(v => v.id === selectedVoice);
+    const n = document.getElementById('vp-selected-name'); if (n) n.textContent = nv?.name ?? selectedVoice;
+    const l = document.getElementById('vp-selected-lang'); if (l) l.textContent = nv ? `${nv.langLabel} · Neural ✦` : '';
+    return;
+  }
   const v = allVoices.find(v => v.name === selectedVoice);
   const n = document.getElementById('vp-selected-name'); if (n) n.textContent = v?.name ?? '';
   const l = document.getElementById('vp-selected-lang'); if (l) l.textContent = v ? getLangLabel(v.lang) + (v.localService ? '' : ' · Network ☁') : '';
@@ -1504,20 +1902,21 @@ function updateSelectedMeta(): void {
 
 function populateVoices(): void {
   const raw = speechSynthesis.getVoices();
-  if (!raw.length) return;
-  const seen = new Set<string>();
-  allVoices = raw.filter(v => { if (seen.has(v.name)) return false; seen.add(v.name); return true; });
-  if (selectedVoice && allVoices.some(v => v.name === selectedVoice)) { renderVoiceList(); }
-  else if (!selectedVoice) {
+  // Don't return early if empty — neural voices are always available
+  if (raw.length > 0) {
+    const seen = new Set<string>();
+    allVoices = raw.filter(v => { if (seen.has(v.name)) return false; seen.add(v.name); return true; });
+  }
+  if (selectedVoice && (isNeuralVoiceId(selectedVoice) || allVoices.some(v => v.name === selectedVoice))) {
+    renderVoiceList();
+  } else if (!selectedVoice) {
     const pref = allVoices.find(v => v.lang.startsWith('en') && v.localService) ?? allVoices.find(v => v.lang.startsWith('en')) ?? allVoices[0];
     if (pref) {
       selectedVoice = pref.name;
-      // Persist the auto-picked default to sync so toolbar/popup see the same voice
       chrome.storage.sync.set({ voiceName: pref.name }).catch(() => {});
     }
   }
   renderVoiceList();
-  // Set voice help link — same OS-aware ChatGPT prompt as the toolbar
   const link = document.getElementById('voice-help-link') as HTMLAnchorElement | null;
   if (link) {
     const ua = navigator.userAgent.toLowerCase();
@@ -1525,10 +1924,84 @@ function populateVoices(): void {
     const prompt = `How do I add more text-to-speech voices on ${os}? I'm using a Chrome extension called Spokn that reads web pages and documents aloud using the browser's built-in speech synthesis voices. I want more voice options to choose from. Please give me simple step-by-step instructions for a regular user, no code.`;
     link.href = `https://chatgpt.com/?q=${encodeURIComponent(prompt)}`;
   }
+
+  // Listen for when AI model becomes ready (e.g., after download completes)
+  onAIModelReady(() => {
+    renderVoiceList();
+  });
+}
+
+// ─── Neural progress (reader) ─────────────────────────────────────────────────
+
+function showNeuralProgress(label: string, percent: number): void {
+  let bar = document.getElementById('spokn-neural-progress');
+  if (!bar) return;
+  bar.style.display = 'block';
+  if (!bar.querySelector('.neural-progress-label')) {
+    bar.innerHTML = `<span class="neural-progress-label"></span><div class="neural-progress-track"><div class="neural-progress-fill"></div></div>`;
+  }
+  const labelEl = bar.querySelector<HTMLElement>('.neural-progress-label');
+  const fillEl  = bar.querySelector<HTMLElement>('.neural-progress-fill');
+  if (labelEl) labelEl.textContent = label;
+  if (fillEl)  fillEl.style.width  = `${percent}%`;
+}
+
+function hideNeuralProgress(): void {
+  const bar = document.getElementById('spokn-neural-progress');
+  if (bar) { bar.style.display = 'none'; bar.innerHTML = ''; }
+}
+
+// ─── Voice preview ────────────────────────────────────────────────────────────
+
+const READER_PREVIEW_TEXT = 'The quick brown fox jumps over the lazy dog.';
+let readerPreviewNeuralTTS: NeuralTTS | null = null;
+
+function readerPreviewVoice(voiceId: string | null): void {
+  // Stop any active preview
+  if (readerPreviewNeuralTTS) { readerPreviewNeuralTTS.destroy(); readerPreviewNeuralTTS = null; }
+  if (typeof speechSynthesis !== 'undefined') speechSynthesis.cancel();
+  previewingVoiceId = null;
+  renderVoiceList(); // reset all button icons
+
+  if (!voiceId) return;
+
+  previewingVoiceId = voiceId;
+
+  if (isNeuralVoiceId(voiceId)) {
+    const nv = getNeuralVoice(voiceId);
+    if (!nv) return;
+    readerPreviewNeuralTTS = new NeuralTTS(nv, { rate, volume });
+    const previewWords = READER_PREVIEW_TEXT.split(/\s+/).map((w, i) => ({
+      word: w, sentenceIndex: 0, node: null as unknown as Text,
+      startOffset: 0, endOffset: w.length, globalIndex: i,
+    }));
+    readerPreviewNeuralTTS.on((e: NeuralTTSEvent) => {
+      if (e.type === 'end' || e.type === 'stop' || e.type === 'error') {
+        readerPreviewNeuralTTS = null;
+        previewingVoiceId = null;
+        renderVoiceList();
+      }
+    });
+    readerPreviewNeuralTTS.play(previewWords as never, 0).catch((_: unknown) => {
+      readerPreviewNeuralTTS = null;
+      previewingVoiceId = null;
+      renderVoiceList();
+    });
+  } else {
+    if (typeof speechSynthesis === 'undefined') return;
+    const voice = allVoices.find(v => v.name === voiceId) ?? null;
+    if (!voice) return;
+    const utt = new SpeechSynthesisUtterance(READER_PREVIEW_TEXT);
+    utt.voice = voice; utt.rate = rate; utt.volume = volume;
+    utt.onend = () => { previewingVoiceId = null; renderVoiceList(); };
+    utt.onerror = () => { previewingVoiceId = null; renderVoiceList(); };
+    speechSynthesis.speak(utt);
+  }
+
+  renderVoiceList(); // update button icon to ■ for active voice
 }
 
 // ─── Settings save/load ───────────────────────────────────────────────────────
-
 async function applySettings(s: ReaderSettings): Promise<void> {
   rate              = s.rate;
   pitch             = s.pitch;
@@ -1600,7 +2073,7 @@ async function saveAllSettings(): Promise<void> {
 }
 
 async function resetAllSettings(): Promise<void> {
-  // Reset everything including saved text
+  // Reset everything including saved text and AI voices state
   await chrome.storage.local.remove(STORAGE_KEY);
   fullText = '';
   words    = [];
@@ -1611,6 +2084,11 @@ async function resetAllSettings(): Promise<void> {
   updateButtons();
   updateProgress();
   setStatus('Paste text or load a PDF, DOCX, or TXT to get started');
+  // Reset AI voices state
+  readerAIVoicesDismissed = false;
+  readerAIVoicesCollapsed = true;
+  saveReaderAIVoicesDismissed(false);
+  saveReaderAIVoicesCollapsed(true);
   await applySettings({ ...DEFAULT_SETTINGS });
   renderVoiceList();
   showToast('Reset to defaults');
@@ -1668,6 +2146,21 @@ function showResumeBanner(idx: number, total: number): void {
 
 const KOFI_URL  = import.meta.env.VITE_KOFI_URL  as string ?? 'https://ko-fi.com/adham_tarek';
 const STORE_URL = import.meta.env.VITE_STORE_URL as string ?? 'https://chromewebstore.google.com/detail/jhckonkklkogobamhhdjajalbnblcoja?utm_source=spokn_extension';
+
+// ── Reader AI voices state (persist like in floating toolbar) ──
+const READER_AI_VOICES_COLLAPSED_KEY = 'spokn-reader-ai-voices-collapsed';
+const READER_AI_VOICES_DISMISSED_KEY = 'spokn-reader-ai-voices-dismissed';
+
+let readerAIVoicesCollapsed = localStorage.getItem(READER_AI_VOICES_COLLAPSED_KEY) === 'true' ? true : true;
+let readerAIVoicesDismissed = localStorage.getItem(READER_AI_VOICES_DISMISSED_KEY) === 'true' ? true : false;
+
+function saveReaderAIVoicesCollapsed(collapsed: boolean): void {
+  try { localStorage.setItem(READER_AI_VOICES_COLLAPSED_KEY, String(collapsed)); } catch {}
+}
+
+function saveReaderAIVoicesDismissed(dismissed: boolean): void {
+  try { localStorage.setItem(READER_AI_VOICES_DISMISSED_KEY, String(dismissed)); } catch {}
+}
 
 function shareExtension(): void {
   const text = `I've been using Spokn to listen to any webpage or document — 100% offline, no sign-up. Check it out:`;
@@ -2013,7 +2506,7 @@ function buildUI(): void {
                 <input id="vp-search" type="search" placeholder="Search voices…" autocomplete="off" spellcheck="false" />
                 <button id="vp-search-clear" class="vp-search-clear" style="display:none">✕</button>
               </div>
-              <div id="vp-panel-all" class="vp-panel"><div id="vp-list-all" class="vp-list" role="listbox"></div></div>
+              <div id="vp-panel-all" class="vp-panel"><div id="spokn-neural-progress"></div><div id="vp-list-all" class="vp-list" role="listbox"></div></div>
               <div id="vp-panel-favs" class="vp-panel" style="display:none"><div id="vp-list-favs" class="vp-list" role="listbox"></div></div>
               <div class="vp-selected-meta">
                 <span id="vp-selected-name" class="vp-selected-name"></span>
@@ -2399,6 +2892,9 @@ function attachListeners(): void {
 
   if (speechSynthesis.getVoices().length > 0) populateVoices();
   else speechSynthesis.addEventListener('voiceschanged', populateVoices, { once: true });
+
+    // Warm up Kokoro only if already downloaded
+    setTimeout(() => { if (isAIModelReady()) preloadKokoro(); }, 3000);
 }
 
 // ─── Styles ───────────────────────────────────────────────────────────────────
@@ -2540,6 +3036,12 @@ function injectStyles(): void {
     .status-success{color:#34d399;}
     .status-error{color:#f87171;}
 
+    /* ── Spinning animation for loading icons ── */
+    @keyframes spokn-spin {
+      from { transform: rotate(0deg); }
+      to { transform: rotate(360deg); }
+    }
+
     /* Progress */
     .progress-wrap{display:flex;flex-direction:column;gap:5px;}
     .progress-track{height:3px;background:rgba(255,255,255,0.08);border-radius:99px;overflow:hidden;}
@@ -2626,12 +3128,142 @@ function injectStyles(): void {
     .vp-star-active{color:#fbbf24!important;opacity:1!important;}
     .vp-star:hover{color:#fbbf24;}
     .vp-empty{padding:20px 10px;text-align:center;font-size:11px;color:rgba(255,255,255,0.25);}
+    .vp-group-header-neural{color:#a78bfa;display:flex;align-items:center;gap:6px;}
+    .vp-neural-badge{font-size:8px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;padding:1px 5px;border-radius:4px;background:rgba(167,139,250,0.15);border:1px solid rgba(167,139,250,0.3);color:#a78bfa;}
+    .vp-group-subheader{padding:4px 10px 2px;font-size:9px;font-weight:600;text-transform:uppercase;letter-spacing:.08em;color:rgba(255,255,255,0.25);background:transparent;}
+    .vp-row-neural .vp-row-name{color:#c4b5fd;}
+    .vp-row-neural.vp-row-selected .vp-row-name{color:#fff;}
+    .vp-badge-neural{font-size:9px;font-weight:600;padding:1px 5px;border-radius:4px;background:rgba(167,139,250,0.12);border:1px solid rgba(167,139,250,0.25);color:#a78bfa;flex-shrink:0;}
+    .vp-badge-grade{font-size:10px;color:#fbbf24;flex-shrink:0;line-height:1;}
+    .vp-preview-btn{all:unset;flex-shrink:0;width:18px;height:18px;border-radius:4px;background:transparent;color:rgba(255,255,255,0.25);font-size:9px;cursor:pointer;display:flex;align-items:center;justify-content:center;padding:0;margin-right:1px;transition:color .12s,background .12s;opacity:0;line-height:1;}
+    .vp-row:hover .vp-preview-btn{opacity:1;}
+    .vp-preview-btn:hover{color:#0277D4;background:rgba(2,119,212,0.12);}
+    .vp-preview-btn.vp-preview-active{color:#f87171;opacity:1;}
+    .vp-preview-btn.vp-preview-active:hover{background:rgba(248,113,113,0.12);}
+    #spokn-neural-progress{display:none;padding:6px 2px 4px;}
+    .neural-progress-label{display:block;font-size:10px;color:#a78bfa;margin-bottom:5px;font-weight:500;}
+    .neural-progress-track{width:100%;height:3px;background:rgba(167,139,250,0.15);border-radius:3px;overflow:hidden;}
+    .neural-progress-fill{height:100%;background:linear-gradient(90deg,#7c3aed,#a78bfa);border-radius:3px;transition:width .3s ease;width:0%;}
     .vp-selected-meta{display:flex;align-items:baseline;gap:5px;min-height:14px;padding:0 1px;}
     .vp-selected-name{font-size:11px;font-weight:600;color:#e8edf5;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:55%;}
     .vp-selected-lang{font-size:10px;color:rgba(255,255,255,0.3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
     .voice-hint-row{display:flex;align-items:center;gap:4px;}
     .voice-hint-link{font-size:10px;color:#0277D4;text-decoration:none;opacity:.85;transition:opacity .12s;}
     .voice-hint-link:hover{opacity:1;text-decoration:underline;}
+
+    /* ── AI Download card ────────────────────────────────────────────────── */
+    .vp-ai-card {
+      margin: 6px 6px 4px;
+      padding: 10px 12px;
+      background: linear-gradient(135deg, rgba(124,58,237,0.12), rgba(167,139,250,0.06));
+      border: 1px solid rgba(167,139,250,0.25);
+      border-radius: 10px;
+    }
+    .vp-ai-card-header {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      margin-bottom: 6px;
+    }
+    .vp-ai-card-icon { font-size: 12px; color: #a78bfa; }
+    .vp-ai-card-title { font-size: 12px; font-weight: 700; color: #c4b5fd; flex: 1; }
+    .vp-ai-card-desc {
+      font-size: 10px;
+      color: rgba(255,255,255,0.45);
+      line-height: 1.5;
+      margin: 0 0 10px;
+    }
+    .vp-ai-dl-btn {
+      width: 100%;
+      padding: 7px 0;
+      background: linear-gradient(135deg, #7c3aed, #a78bfa);
+      border: none;
+      border-radius: 7px;
+      color: #fff;
+      font-size: 11px;
+      font-weight: 700;
+      font-family: inherit;
+      cursor: pointer;
+      transition: filter 0.15s, transform 0.1s;
+      letter-spacing: 0.02em;
+    }
+    .vp-ai-dl-btn:hover  { filter: brightness(1.15); }
+    .vp-ai-dl-btn:active { transform: scale(0.97); }
+    .vp-ai-progress { margin-top: 2px; }
+    .vp-ai-progress-bar-wrap {
+      width: 100%;
+      height: 4px;
+      background: rgba(167,139,250,0.15);
+      border-radius: 4px;
+      overflow: hidden;
+      margin-bottom: 5px;
+    }
+    .vp-ai-progress-fill {
+      height: 100%;
+      background: linear-gradient(90deg, #7c3aed, #a78bfa);
+      border-radius: 4px;
+      width: 0%;
+      transition: width 0.4s ease;
+    }
+    .vp-ai-progress-label {
+      font-size: 10px;
+      color: #a78bfa;
+      font-weight: 500;
+    }
+
+    /* ── Download button ─────────────────────────────────────────────────── */
+    .vp-download-btn {
+      flex-shrink: 0;
+      height: 20px;
+      padding: 0 7px;
+      border: 1px solid rgba(167,139,250,0.4);
+      border-radius: 5px;
+      background: rgba(167,139,250,0.1);
+      color: #a78bfa;
+      font-size: 10px;
+      font-weight: 600;
+      cursor: pointer;
+      font-family: inherit;
+      transition: background 0.12s, color 0.12s;
+      white-space: nowrap;
+    }
+    .vp-download-btn:hover:not(:disabled) { background: rgba(167,139,250,0.22); }
+    .vp-download-btn:disabled { opacity: 0.6; cursor: default; color: rgba(167,139,250,0.7); }
+
+    /* ── AI card close button ────────────────────────────────────────────── */
+    .vp-ai-card-close {
+      all: unset;
+      width: 16px;
+      height: 16px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: rgba(255,255,255,0.25);
+      cursor: pointer;
+      font-size: 11px;
+      border-radius: 4px;
+      transition: color 0.12s, background 0.12s;
+      flex-shrink: 0;
+    }
+    .vp-ai-card-close:hover { color: #e8edf5; background: rgba(255,255,255,0.08); }
+    .vp-ai-card-close:active { transform: scale(0.88); }
+
+    /* ── Neural voice section collapse button ────────────────────────────── */
+    .vp-collapse-btn {
+      all: unset;
+      width: 18px;
+      height: 18px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      border-radius: 4px;
+      color: rgba(255,255,255,0.45);
+      transition: color 0.12s, background 0.12s;
+      flex-shrink: 0;
+    }
+    .vp-collapse-btn:hover { background: rgba(255,255,255,0.08); color: #a78bfa; }
+    .vp-collapse-btn svg { width: 14px; height: 14px; }
 
     /* Theme swatches */
     .theme-swatches{display:flex;gap:6px;flex-wrap:wrap;flex:1;}

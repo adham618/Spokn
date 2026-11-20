@@ -1,6 +1,7 @@
 import type { Message, MessageResponse } from '../shared/messages.js';
 import type { PlaybackState } from '../shared/types.js';
 import { DEFAULT_STATE } from '../shared/types.js';
+import { handleNeuralMessage, handleOffscreenResult, removeTab } from './neuralBridge.js';
 
 let globalState: PlaybackState = { ...DEFAULT_STATE };
 let activeTabId: number | null = null;
@@ -99,6 +100,17 @@ chrome.runtime.onMessage.addListener(
     const msg = rawMsg as Message;
 
     (async () => {
+      // ── Neural TTS bridge — handle before standard message routing ─────────
+      const senderTabId = sender.tab?.id;
+      if (senderTabId && await handleNeuralMessage(msg as never, senderTabId)) {
+        sendResponse({ success: true } satisfies MessageResponse);
+        return;
+      }
+      // Results coming back from offscreen document (no sender.tab)
+      if (!sender.tab && handleOffscreenResult(msg as never)) {
+        sendResponse({ success: true } satisfies MessageResponse);
+        return;
+      }
       // From content script
       if (sender.tab?.id) {
         if (msg.type === 'STATE_UPDATE') {
@@ -296,6 +308,7 @@ chrome.commands.onCommand.addListener(async (command) => {
 // ─── Tab cleanup ──────────────────────────────────────────────────────────────
 
 chrome.tabs.onRemoved.addListener((tabId) => {
+  removeTab(tabId);
   if (tabId === activeTabId) {
     activeTabId = null;
     globalState = { ...DEFAULT_STATE };

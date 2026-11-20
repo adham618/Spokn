@@ -19,6 +19,9 @@ import { DEFAULT_STATE } from '../shared/types.js';
 import type { ToolbarState } from './floatingToolbar.js';
 import { FloatingToolbar } from './floatingToolbar.js';
 import { applyTheme, DEFAULT_THEME_ID, removeTheme } from './highlightTheme.js';
+import type { NeuralProgressCallback } from './neuralTts.js';
+import { isAIModelReady, NeuralTTS, preloadKokoro } from './neuralTts.js';
+import { getNeuralVoice, isNeuralVoiceId } from './neuralVoices.js';
 import type { WalkResult } from './textWalker.js';
 import { extractPageText, walkPageAsync, walkSelection, walkText, WORD_CLASS } from './textWalker.js';
 import { getVoices, TTS } from './tts.js';
@@ -29,6 +32,7 @@ const ERR = (...args: unknown[]) => console.error('[Spokn]', ...args);
 // ─── Module state ─────────────────────────────────────────────────────────────
 
 let tts: TTS | null = null;
+let neuralTts: NeuralTTS | null = null;
 let walkResult: WalkResult | null = null;
 let walkPromise: Promise<WalkResult> | null = null;
 let toolbar: FloatingToolbar | null = null;
@@ -255,6 +259,8 @@ function buildToolbarState(): ToolbarState {
     sleepTimerEndsAt: state.sleepTimerEndsAt,
     siteDomain: getSiteDomain(),
     siteSettingsCache,
+    aiVoicesCollapsed: true,
+    aiVoicesDismissed: false,
   };
 }
 
@@ -275,8 +281,8 @@ function createToolbar(): FloatingToolbar {
           startReading('page').catch(e => ERR('startReading threw:', e));
         }
       },
-      onPause: () => { LOG('toolbar onPause'); tts?.pause(); },
-      onResume: () => { LOG('toolbar onResume'); tts?.resume(); },
+      onPause: () => { LOG('toolbar onPause'); tts?.pause(); neuralTts?.pause(); },
+      onResume: () => { LOG('toolbar onResume'); tts?.resume(); neuralTts?.resume(); },
       onStop: () => {
         LOG('toolbar onStop');
         stopReading();
@@ -289,11 +295,13 @@ function createToolbar(): FloatingToolbar {
         LOG('voiceChange:', voiceName);
         state.voiceName = voiceName;
         tts?.updateOptions({ voiceName });
+        neuralTts?.updateOptions({ voice: getNeuralVoice(voiceName) });
         await chrome.storage.sync.set({ voiceName });
       },
       onSpeedChange: (rate) => {
         state.rate = rate;
         tts?.updateOptionsAndRestart({ rate });
+        neuralTts?.updateOptions({ rate });
         persistRate(rate);
       },
       onPitchChange: (pitch) => {
@@ -304,12 +312,14 @@ function createToolbar(): FloatingToolbar {
       onVolumeChange: (volume) => {
         state.volume = volume;
         tts?.updateOptionsAndRestart({ volume });
+        neuralTts?.updateOptions({ volume });
         persistVolume(volume);
       },
       onModeChange: async (mode) => {
         LOG('modeChange:', mode);
         state.mode = mode;
-        if (tts) { tts.stop(); tts = null; }
+        if (tts)       { tts.stop();       tts       = null; }
+        if (neuralTts) { neuralTts.stop(); neuralTts = null; }
         walkResult = null;
         walkPromise = null;
         setState({ status: 'stopped', currentWord: '', wordIndex: 0, currentSentence: '' });
@@ -396,6 +406,11 @@ function createToolbar(): FloatingToolbar {
         }
         setTimeout(() => toolbar?.setSendingState(false), 1000);
       },
+
+      onVoicePreview: (voiceId) => {
+        LOG('voicePreview:', voiceId);
+        previewVoice(voiceId);
+      },
     },
     buildToolbarState(),
   );
@@ -425,7 +440,13 @@ async function startReading(
   setState({ status: 'loading' });
   await new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
 
-  if (tts) { tts.stop(); tts = null; }
+  if (tts)       { tts.stop();       tts       = null; }
+  if (neuralTts) { neuralTts.stop(); neuralTts = null; }
+
+  // Cancel any voice preview
+  previewTTS?.stop(); previewTTS = null;
+  previewNeuralTTS?.destroy(); previewNeuralTTS = null;
+  toolbar?.setPreviewState(null);
 
   let startWordIndex = fromWordIndex ?? 0;
   try {
@@ -492,7 +513,7 @@ async function startReading(
 
   LOG('words to speak:', result.words.length, '— first:', result.words[0]?.word);
 
-  if (typeof speechSynthesis === 'undefined') {
+  if (typeof speechSynthesis === 'undefined' && !isNeuralVoiceId(state.voiceName || '')) {
     ERR('speechSynthesis not available on this page');
     setState({ status: 'stopped' });
     showToolbarError('Speech not available on this page.');
@@ -505,6 +526,98 @@ async function startReading(
   const volume    = state.volume ?? 1.0;
 
   LOG('TTS settings — voice:', voiceName || '(default)', 'rate:', rate, 'pitch:', pitch, 'vol:', volume);
+
+  // ── Route to neural engine if a neural voice is selected ───────────────────
+  if (isNeuralVoiceId(voiceName)) {
+    const neuralVoice = getNeuralVoice(voiceName);
+    if (!neuralVoice) {
+      ERR('Neural voice not found:', voiceName);
+      setState({ status: 'stopped' });
+      showToolbarError('Voice not found. Please select another voice.');
+      return;
+    }
+
+    (neuralTts as NeuralTTS | null)?.stop();
+    neuralTts = null;
+    neuralTts = new NeuralTTS(neuralVoice, { rate, volume });
+
+    neuralTts.on((event) => {
+      switch (event.type) {
+        case 'loading':
+          setState({ status: 'loading' });
+          break;
+
+        case 'start':
+          setState({
+            status: 'playing',
+            voiceName: state.voiceName,
+            rate: state.rate, pitch: state.pitch, volume: state.volume,
+            totalWords: result.words.length,
+            wordIndex: startWordIndex,
+          });
+          resumeSleepTimer();
+          break;
+
+        case 'word': {
+          const idx  = event.wordIndex ?? 0;
+          const word = event.word ?? '';
+          const sentIdx  = result.words[idx]?.sentenceIndex ?? 0;
+          const sentence = sentenceCache.get(sentIdx) ?? '';
+          setState({ currentWord: word, wordIndex: idx, currentSentence: sentence });
+          if (idx % 10 === 0 && state.mode !== 'selection') saveReadingPosition(idx);
+          chrome.runtime.sendMessage({ type: 'WORD_BOUNDARY', wordIndex: idx, word } satisfies Message).catch(() => {});
+          break;
+        }
+
+        case 'pause':
+          setState({ status: 'paused' });
+          pauseSleepTimer();
+          if (state.mode !== 'selection') saveReadingPosition(state.wordIndex);
+          break;
+
+        case 'resume':
+          setState({ status: 'playing' });
+          resumeSleepTimer();
+          break;
+
+        case 'stop':
+        case 'end':
+          toolbar?.hideNeuralProgress();
+          setState({ status: 'stopped', currentWord: '', wordIndex: 0, currentSentence: '' });
+          if (event.type === 'end') clearReadingPosition();
+          neuralTts = null;
+          break;
+
+        case 'error':
+          ERR('Neural TTS error:', event.error);
+          toolbar?.hideNeuralProgress();
+          setState({ status: 'stopped', currentWord: '', wordIndex: 0, currentSentence: '' });
+          neuralTts = null;
+          showToolbarError('Neural voice error. Try a different voice.');
+          break;
+      }
+    });
+
+    const onProgress: NeuralProgressCallback = (p) => {
+      if (p.status === 'downloading') {
+        toolbar?.showNeuralProgress(p.label, p.percent);
+      } else {
+        toolbar?.hideNeuralProgress();
+      }
+    };
+
+    try {
+      await neuralTts.play(result.words, startWordIndex, onProgress);
+    } catch (e) {
+      ERR('neuralTts.play() threw:', e);
+      toolbar?.hideNeuralProgress();
+      setState({ status: 'stopped' });
+      showToolbarError('Neural voice playback failed.');
+    }
+    return;
+  }
+
+  // ── Web Speech API (system voices) ─────────────────────────────────────────
 
   tts = new TTS({ voiceName, rate, pitch, volume, autoScroll: autoScrollEnabled });
 
@@ -582,6 +695,71 @@ async function startReading(
   }
 }
 
+// ─── Voice preview ────────────────────────────────────────────────────────────
+
+const PREVIEW_TEXT = 'The quick brown fox jumps over the lazy dog.';
+let previewTTS: TTS | null = null;
+let previewNeuralTTS: NeuralTTS | null = null;
+
+function previewVoice(voiceId: string | null): void {
+  // Stop any active preview first
+  previewTTS?.stop();
+  previewTTS = null;
+  previewNeuralTTS?.destroy();
+  previewNeuralTTS = null;
+  toolbar?.setPreviewState(null);
+
+  if (!voiceId) return; // just stopping
+
+  if (isNeuralVoiceId(voiceId)) {
+    // Neural preview
+    const neuralVoice = getNeuralVoice(voiceId);
+    if (!neuralVoice) return;
+
+    previewNeuralTTS = new NeuralTTS(neuralVoice, { rate: state.rate, volume: state.volume });
+
+    const words = PREVIEW_TEXT.split(/\s+/).map((w, i) => ({
+      word: w, sentenceIndex: 0, node: null as unknown as Text,
+      startOffset: 0, endOffset: w.length, globalIndex: i,
+    }));
+
+    toolbar?.setPreviewState(voiceId);
+
+    previewNeuralTTS.on((event) => {
+      if (event.type === 'end' || event.type === 'stop' || event.type === 'error') {
+        previewNeuralTTS = null;
+        toolbar?.setPreviewState(null);
+      }
+    });
+
+    previewNeuralTTS.play(words as never, 0).catch(() => {
+      previewNeuralTTS = null;
+      toolbar?.setPreviewState(null);
+    });
+
+  } else {
+    // System voice preview via Web Speech API
+    if (typeof speechSynthesis === 'undefined') return;
+
+    const voices = speechSynthesis.getVoices();
+    const voice  = voices.find(v => v.name === voiceId) ?? null;
+    if (!voice) return;
+
+    toolbar?.setPreviewState(voiceId);
+
+    const utt = new SpeechSynthesisUtterance(PREVIEW_TEXT);
+    utt.voice  = voice;
+    utt.rate   = state.rate;
+    utt.volume = state.volume;
+    utt.onend  = () => toolbar?.setPreviewState(null);
+    utt.onerror = () => toolbar?.setPreviewState(null);
+    speechSynthesis.speak(utt);
+
+    // Keep a reference so we can cancel it
+    previewTTS = { stop: () => { speechSynthesis.cancel(); } } as unknown as TTS;
+  }
+}
+
 function stopReading(): void {
   LOG('stopReading()');
   // Freeze timer but keep display showing remaining time
@@ -595,6 +773,8 @@ function stopReading(): void {
   }
   tts?.stop();
   tts = null;
+  neuralTts?.stop();
+  neuralTts = null;
   toolbar?.dismissEngineError();
   // Save position on stop
   if (state.mode !== 'selection' && state.wordIndex > 0) {
@@ -655,7 +835,8 @@ function skipSentence(direction: 'next' | 'prev'): void {
 
   // Capture playback intent BEFORE stopping (stop fires state change to 'stopped')
   const wasActive = state.status === 'playing' || state.status === 'paused';
-  if (tts) { tts.stop(); tts = null; }
+  if (tts)       { tts.stop();       tts       = null; }
+  if (neuralTts) { neuralTts.stop(); neuralTts = null; }
 
   if (wasActive) {
     startReading(state.mode === 'selection' ? 'selection' : 'page', undefined, targetWordIdx)
@@ -736,6 +917,8 @@ function teardown(): void {
 
   try { tts?.stop(); } catch { /* ignore */ }
   tts = null;
+  try { neuralTts?.destroy(); } catch { /* ignore */ }
+  neuralTts = null;
 
   disableClickToRead();
 
@@ -829,7 +1012,8 @@ async function resetAllSettings(): Promise<void> {
   await chrome.storage.sync.clear();
   try { localStorage.removeItem('spokn-toolbar-pos'); } catch { /* ignore */ }
   try { localStorage.removeItem('spokn-page-positions'); } catch { /* ignore */ }
-  if (tts) { tts.stop(); tts = null; }
+  if (tts)       { tts.stop();          tts       = null; }
+  if (neuralTts) { neuralTts.destroy(); neuralTts = null; }
   clearSleepTimer();
   sleepTimerRemainingMs = 0;
   state.voiceName    = DEFAULT_STATE.voiceName;
@@ -943,7 +1127,8 @@ function skipParagraph(direction: 'next' | 'prev'): void {
 
   LOG('skipParagraph', direction, '→ word', targetWordIdx);
   const wasActive = state.status === 'playing' || state.status === 'paused';
-  if (tts) { tts.stop(); tts = null; }
+  if (tts)       { tts.stop();       tts       = null; }
+  if (neuralTts) { neuralTts.stop(); neuralTts = null; }
   if (wasActive) startReading(state.mode === 'selection' ? 'selection' : 'page', undefined, targetWordIdx)
     .catch(e => ERR('skipParagraph threw:', e));
 }
@@ -1027,12 +1212,18 @@ chrome.runtime.onMessage.addListener(
           }
 
           case 'PAUSE':
-            if (tts && state.status === 'playing') tts.pause();
+            if (state.status === 'playing') {
+              tts?.pause();
+              neuralTts?.pause();
+            }
             sendResponse({ success: true } satisfies MessageResponse);
             break;
 
           case 'RESUME':
-            if (tts && state.status === 'paused') tts.resume();
+            if (state.status === 'paused') {
+              tts?.resume();
+              neuralTts?.resume();
+            }
             sendResponse({ success: true } satisfies MessageResponse);
             break;
 
@@ -1196,6 +1387,10 @@ chrome.runtime.onMessage.addListener(
         LOG('auto-selected voice:', preferred.name);
       }
     }
+
+    // Warm up neural engines in the background after a short delay.
+    // Only warm up if model already downloaded — avoids triggering download on every page load
+    setTimeout(() => { if (isAIModelReady()) preloadKokoro(); }, 3000);
   } catch (e) {
     ERR('init failed:', e);
   }

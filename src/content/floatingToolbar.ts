@@ -7,6 +7,9 @@
  */
 
 import { HIGHLIGHT_THEMES } from "./highlightTheme";
+import { downloadEngine, getEngineState, isAIModelReady, onAIModelReady } from "./neuralTts";
+import type { NeuralVoice } from "./neuralVoices";
+import { ALL_NEURAL_VOICES, isNeuralVoiceId } from "./neuralVoices";
 
 
 export interface ToolbarCallbacks {
@@ -33,6 +36,8 @@ export interface ToolbarCallbacks {
   onClearSiteSettings: (domain: string) => void;
   onOpenReaderPage: () => void;
   onSendToReader: () => void;
+  /** Preview a voice — speaks a short sample sentence. Pass null to stop. */
+  onVoicePreview: (voiceId: string | null) => void;
 }
 
 export interface ToolbarState {
@@ -53,6 +58,8 @@ export interface ToolbarState {
   sleepTimerEndsAt: number;
   siteDomain: string;
   siteSettingsCache: Record<string, { voiceName: string; rate: number; autoScroll: boolean; sleepTimerMinutes: number }>;
+  aiVoicesCollapsed: boolean;
+  aiVoicesDismissed: boolean;
 }
 
 // ─── SVG icon library ─────────────────────────────────────────────────────────
@@ -97,6 +104,8 @@ export class FloatingToolbar {
   private st: ToolbarState;
   private settingsOpen = false;
   private pillExpanded = false;
+  private previewingVoiceId: string | null = null;
+  private aiModelReady = false;
 
   // Drag
   private dragging = false;
@@ -106,6 +115,8 @@ export class FloatingToolbar {
   private posY: number | null = null;
 
   private static readonly POS_KEY = 'spokn-toolbar-pos';
+  private static readonly AI_VOICES_COLLAPSED_KEY = 'spokn-ai-voices-collapsed';
+  private static readonly AI_VOICES_DISMISSED_KEY = 'spokn-ai-voices-dismissed';
 
   // Fix #11 — CSS is computed once and reused across all render() calls
   private static readonly STATIC_CSS: string = FloatingToolbar.buildCSS();
@@ -127,6 +138,17 @@ export class FloatingToolbar {
 
   mount(): void {
     if (this.host) return;
+
+    // Load AI voices state before rendering
+    this.st.aiVoicesCollapsed = this.loadAIVoicesCollapsed();
+    this.st.aiVoicesDismissed = this.loadAIVoicesDismissed();
+
+    // Sync AI model state and re-render voice list when model becomes ready
+    this.aiModelReady = isAIModelReady();
+    onAIModelReady(() => {
+      this.aiModelReady = true;
+      this.renderVoiceList();
+    });
 
     this.host = document.createElement('div');
     this.host.id = 'spokn-host';
@@ -207,8 +229,7 @@ export class FloatingToolbar {
     wrap.appendChild(btn);
   }
 
-  showToast(msg: string): void {
-    if (!this.shadow) return;
+  showToast(msg: string): void {    if (!this.shadow) return;
     const existing = this.shadow.getElementById('spokn-toast');
     if (existing) existing.remove();
     const toast = document.createElement('div');
@@ -224,6 +245,46 @@ export class FloatingToolbar {
         setTimeout(() => toast.remove(), 300);
       }, 2000);
     }
+  }
+
+  // ─── Neural progress bar ───────────────────────────────────────────────────
+
+  showNeuralProgress(label: string, percent: number): void {
+    if (!this.shadow) return;
+    let bar = this.shadow.getElementById('spokn-neural-progress') as HTMLElement | null;
+    if (!bar) {
+      bar = document.createElement('div');
+      bar.id = 'spokn-neural-progress';
+      bar.innerHTML = `
+        <span class="neural-progress-label"></span>
+        <div class="neural-progress-track"><div class="neural-progress-fill"></div></div>
+      `;
+      const voicePicker = this.shadow.querySelector('.voice-picker');
+      voicePicker?.prepend(bar);
+    }
+    const labelEl = bar.querySelector<HTMLElement>('.neural-progress-label');
+    const fillEl  = bar.querySelector<HTMLElement>('.neural-progress-fill');
+    if (labelEl) labelEl.textContent = label;
+    if (fillEl)  fillEl.style.width  = `${percent}%`;
+    bar.style.display = 'block';
+  }
+
+  hideNeuralProgress(): void {
+    this.shadow?.getElementById('spokn-neural-progress')?.remove();
+  }
+
+  /** Called by content.ts when preview starts or stops, to update button icons. */
+  setPreviewState(voiceId: string | null): void {
+    this.previewingVoiceId = voiceId;
+    if (!this.shadow) return;
+    // Reset all preview buttons
+    this.shadow.querySelectorAll<HTMLButtonElement>('.vp-preview-btn').forEach(btn => {
+      const id = btn.dataset.previewId ?? '';
+      const isThis = id === voiceId;
+      btn.textContent = isThis ? '■' : '▶';
+      btn.setAttribute('aria-label', isThis ? 'Stop preview' : 'Preview voice');
+      btn.classList.toggle('vp-preview-active', isThis);
+    });
   }
 
   // Fix #4 — public method so content.ts no longer needs to access private shadow
@@ -858,6 +919,10 @@ export class FloatingToolbar {
 
     s.getElementById('spokn-reset-btn')?.addEventListener('click', () => {
       if (window.confirm('Reset all settings to defaults?')) {
+        this.st.aiVoicesDismissed = false;
+        this.st.aiVoicesCollapsed = true;
+        this.saveAIVoicesDismissed(false);
+        this.saveAIVoicesCollapsed(true);
         this.cb.onReset();
       }
     });
@@ -1114,7 +1179,8 @@ export class FloatingToolbar {
   /** Render (or re-render) the active tab's voice list. */
   private renderVoiceList(): void {
     const s = this.shadow;
-    if (!s || this.allVoices.length === 0) return;
+    // Allow rendering even if system voices are empty — neural voices are always available.
+    if (!s) return;
 
     const q    = this.getQuery();
     const favs = this.st.favoriteVoices ?? [];
@@ -1150,32 +1216,120 @@ export class FloatingToolbar {
     if (!container) return;
     container.innerHTML = '';
 
-    if (matched.length === 0) {
+    // ── Neural voices section (always at the top) ───────────────────────────
+    const neuralMatched = query
+      ? ALL_NEURAL_VOICES.filter(v =>
+          v.name.toLowerCase().includes(query) ||
+          v.langLabel.toLowerCase().includes(query) ||
+          v.lang.toLowerCase().includes(query)
+        )
+      : ALL_NEURAL_VOICES;
+
+    if (neuralMatched.length > 0) {
+      if (!this.aiModelReady) {
+        // Don't render download card if dismissed
+        if (!this.st.aiVoicesDismissed) {
+          container.appendChild(this.buildDownloadCard());
+        }
+      } else {
+        // ── Voices revealed after download ────────────────────────────────────
+        // Neural header with collapse button
+        const neuralHdr = document.createElement('div');
+        neuralHdr.className = 'vp-group-header vp-group-header-neural';
+
+        const headerContent = document.createElement('div');
+        headerContent.style.display = 'flex';
+        headerContent.style.alignItems = 'center';
+        headerContent.style.gap = '6px';
+        headerContent.style.flex = '1';
+        headerContent.style.cursor = 'pointer';
+        headerContent.style.userSelect = 'none';
+
+        const title = document.createElement('span');
+        title.textContent = '✦ AI Voices';
+        headerContent.appendChild(title);
+
+        const badge = document.createElement('span');
+        badge.className = 'vp-neural-badge';
+        badge.textContent = 'Offline · AI';
+        headerContent.appendChild(badge);
+
+        const collapseBtn = document.createElement('button');
+        collapseBtn.className = 'vp-collapse-btn';
+        collapseBtn.innerHTML = this.st.aiVoicesCollapsed ? ICONS.chevronDown : ICONS.chevronUp;
+        collapseBtn.setAttribute('aria-label', this.st.aiVoicesCollapsed ? 'Expand AI voices' : 'Collapse AI voices');
+        collapseBtn.setAttribute('title', this.st.aiVoicesCollapsed ? 'Expand' : 'Collapse');
+        collapseBtn.style.marginLeft = 'auto';
+
+        neuralHdr.appendChild(headerContent);
+        neuralHdr.appendChild(collapseBtn);
+
+        collapseBtn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          this.st.aiVoicesCollapsed = !this.st.aiVoicesCollapsed;
+          this.saveAIVoicesCollapsed(this.st.aiVoicesCollapsed);
+          this.renderVoiceList();
+        });
+
+        headerContent.addEventListener('click', (e) => {
+          e.stopPropagation();
+          this.st.aiVoicesCollapsed = !this.st.aiVoicesCollapsed;
+          this.saveAIVoicesCollapsed(this.st.aiVoicesCollapsed);
+          this.renderVoiceList();
+        });
+
+        container.appendChild(neuralHdr);
+
+        // Render neural voices only if not collapsed
+        if (!this.st.aiVoicesCollapsed) {
+          const neuralGroups = new Map<string, NeuralVoice[]>();
+          for (const v of neuralMatched) {
+            if (!neuralGroups.has(v.langLabel)) neuralGroups.set(v.langLabel, []);
+            neuralGroups.get(v.langLabel)!.push(v);
+          }
+          for (const [label, voices] of neuralGroups) {
+            const subHdr = document.createElement('div');
+            subHdr.className = 'vp-group-subheader';
+            subHdr.textContent = label;
+            container.appendChild(subHdr);
+            for (const v of voices) {
+              container.appendChild(this.neuralVoiceRow(v, favs));
+            }
+          }
+        }
+      }
+    }
+
+    // ── System voices section ───────────────────────────────────────────────
+    if (matched.length === 0 && neuralMatched.length === 0) {
       container.appendChild(this.emptyState(query ? `No voices match "${query}"` : 'No voices available'));
       return;
     }
 
-    // Group by language, sort by display label
-    const groups = new Map<string, SpeechSynthesisVoice[]>();
-    for (const v of matched) {
-      const tag = v.lang || 'Unknown';
-      if (!groups.has(tag)) groups.set(tag, []);
-      groups.get(tag)!.push(v);
+    if (matched.length > 0) {
+      const sysHdr = document.createElement('div');
+      sysHdr.className = 'vp-group-header';
+      sysHdr.textContent = 'System Voices';
+      container.appendChild(sysHdr);
+      // Group by language, sort by display label
+      const groups = new Map<string, SpeechSynthesisVoice[]>();
+      for (const v of matched) {
+        const tag = v.lang || 'Unknown';
+        if (!groups.has(tag)) groups.set(tag, []);
+        groups.get(tag)!.push(v);
+      }
+      Array.from(groups.entries())
+        .sort(([a], [b]) => this.getLangLabel(a).localeCompare(this.getLangLabel(b)))
+        .forEach(([tag, voices]) => {
+          const hdr = document.createElement('div');
+          hdr.className = 'vp-group-subheader';
+          hdr.textContent = this.getLangLabel(tag);
+          container.appendChild(hdr);
+          for (const v of voices) {
+            container.appendChild(this.voiceRow(v, favs));
+          }
+        });
     }
-
-    Array.from(groups.entries())
-      .sort(([a], [b]) => this.getLangLabel(a).localeCompare(this.getLangLabel(b)))
-      .forEach(([tag, voices]) => {
-        // Language group header
-        const hdr = document.createElement('div');
-        hdr.className = 'vp-group-header';
-        hdr.textContent = this.getLangLabel(tag);
-        container.appendChild(hdr);
-
-        for (const v of voices) {
-          container.appendChild(this.voiceRow(v, favs));
-        }
-      });
   }
 
   private renderListFavs(
@@ -1188,9 +1342,17 @@ export class FloatingToolbar {
     if (!container) return;
     container.innerHTML = '';
 
+    // Neural favorites
+    const neuralFavs = ALL_NEURAL_VOICES.filter(v => {
+      if (!favs.includes(v.id)) return false;
+      if (!query) return true;
+      return v.name.toLowerCase().includes(query) || v.langLabel.toLowerCase().includes(query);
+    });
+
+    // System favorites
     const favMatched = matched.filter(v => favs.includes(v.name));
 
-    if (favMatched.length === 0) {
+    if (neuralFavs.length === 0 && favMatched.length === 0) {
       const msg = query
         ? `No favorites match "${query}"`
         : 'No favorites yet — star a voice on the All tab';
@@ -1198,6 +1360,9 @@ export class FloatingToolbar {
       return;
     }
 
+    for (const v of neuralFavs) {
+      container.appendChild(this.neuralVoiceRow(v, favs));
+    }
     for (const v of favMatched) {
       container.appendChild(this.voiceRow(v, favs));
     }
@@ -1231,6 +1396,14 @@ export class FloatingToolbar {
       info.appendChild(badge);
     }
 
+    // Preview button
+    const preview = document.createElement('button');
+    preview.className = 'vp-preview-btn';
+    preview.textContent = '▶';
+    preview.setAttribute('aria-label', 'Preview voice');
+    preview.title = 'Preview this voice';
+    preview.dataset.previewId = v.name;
+
     // Star button
     const star = document.createElement('button');
     star.className = 'vp-star' + (isFav ? ' vp-star-active' : '');
@@ -1240,12 +1413,21 @@ export class FloatingToolbar {
     star.dataset.voiceStar = v.name;
 
     row.appendChild(info);
+    row.appendChild(preview);
     row.appendChild(star);
 
     // Click row → select voice
     row.addEventListener('click', (e) => {
-      if ((e.target as HTMLElement).dataset.voiceStar) return; // handled by star
+      const t = e.target as HTMLElement;
+      if (t.dataset.voiceStar || t.dataset.previewId) return;
       this.selectVoice(v.name);
+    });
+
+    // Click preview → preview/stop
+    preview.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const isActive = this.previewingVoiceId === v.name;
+      this.cb.onVoicePreview(isActive ? null : v.name);
     });
 
     // Click star → toggle favorite
@@ -1255,6 +1437,182 @@ export class FloatingToolbar {
     });
 
     return row;
+  }
+
+  /** Build a voice row for a Kokoro neural voice. */
+  private neuralVoiceRow(v: NeuralVoice, favs: string[]): HTMLElement {
+    const isSel = v.id === this.st.voiceName;
+    const isFav = favs.includes(v.id);
+
+    const row = document.createElement('div');
+    row.className = 'vp-row vp-row-neural' + (isSel ? ' vp-row-selected' : '');
+    row.setAttribute('role', 'option');
+    row.setAttribute('aria-selected', String(isSel));
+    row.dataset.voice = v.id;
+
+    const info = document.createElement('div');
+    info.className = 'vp-row-info';
+
+    const name = document.createElement('span');
+    name.className = 'vp-row-name';
+    name.textContent = v.name;
+    info.appendChild(name);
+
+    // Engine badge
+    const engineBadge = document.createElement('span');
+    engineBadge.className = 'vp-badge-neural';
+    engineBadge.textContent = 'Kokoro';
+    engineBadge.title = 'High-quality English neural voice (Kokoro-82M)';
+    info.appendChild(engineBadge);
+
+    // Grade badge (only show A)
+    if (v.grade === 'A') {
+      const grade = document.createElement('span');
+      grade.className = 'vp-badge-grade';
+      grade.textContent = '★';
+      grade.title = 'Top-rated voice';
+      info.appendChild(grade);
+    }
+
+    const engine = v.engine;
+    const isReady = getEngineState(engine) === 'ready';
+
+    // If not downloaded — show Download button, disable row selection
+    if (!isReady) {
+      const dlBtn = document.createElement('button');
+      dlBtn.className = 'vp-download-btn';
+      dlBtn.textContent = '↓ Download';
+      dlBtn.title = 'Download AI voices (one-time)';
+      dlBtn.dataset.downloadEngine = engine;
+
+      row.appendChild(info);
+      row.appendChild(dlBtn);
+
+      row.addEventListener('click', (e) => {
+        const t = e.target as HTMLElement;
+        if (t.dataset.downloadEngine) return;
+        // Don't allow selection until downloaded
+        this.showToast('Download AI voices first');
+      });
+
+      dlBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        dlBtn.disabled = true;
+        dlBtn.textContent = 'Downloading…';
+        downloadEngine(engine, (p: { status: 'downloading'|'ready'; percent: number; label: string; totalMB?: number }) => {
+          if (p.status === 'downloading') {
+            const mb = p.totalMB ? ` / ${p.totalMB} MB` : '';
+            dlBtn.textContent = `${p.percent}%${mb}`;
+          } else {
+            // Ready — re-render the voice list so download button is replaced
+            this.renderVoiceList();
+          }
+        });
+      });
+
+      return row;
+    }
+
+    // Downloaded — show preview + star buttons normally
+    // Preview button
+    const preview = document.createElement('button');
+    preview.className = 'vp-preview-btn';
+    preview.textContent = '▶';
+    preview.setAttribute('aria-label', 'Preview voice');
+    preview.title = 'Preview this voice';
+    preview.dataset.previewId = v.id;
+
+    // Star / favourite button
+    const star = document.createElement('button');
+    star.className = 'vp-star' + (isFav ? ' vp-star-active' : '');
+    star.textContent = isFav ? '★' : '☆';
+    star.setAttribute('aria-label', isFav ? `Unpin ${v.name}` : `Pin ${v.name}`);
+    star.title = isFav ? 'Remove from favorites' : 'Add to favorites';
+    star.dataset.voiceStar = v.id;
+
+    row.appendChild(info);
+    row.appendChild(preview);
+    row.appendChild(star);
+
+    row.addEventListener('click', (e) => {
+      const t = e.target as HTMLElement;
+      if (t.dataset.voiceStar || t.dataset.previewId) return;
+      this.selectVoice(v.id);
+    });
+
+    preview.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const isActive = this.previewingVoiceId === v.id;
+      this.cb.onVoicePreview(isActive ? null : v.id);
+    });
+
+    star.addEventListener('click', (e) => {
+      e.stopPropagation();
+      this.toggleFavorite(v.id);
+    });
+
+    return row;
+  }
+
+  private buildDownloadCard(): HTMLElement {
+    const card = document.createElement('div');
+    card.className = 'vp-ai-card';
+
+    card.innerHTML = `
+      <div class="vp-ai-card-header">
+        <span class="vp-ai-card-icon">✦</span>
+        <span class="vp-ai-card-title">AI Voices</span>
+        <span class="vp-neural-badge">Offline · AI</span>
+        <button class="vp-ai-card-close" aria-label="Dismiss AI voices" title="Dismiss">✕</button>
+      </div>
+      <p class="vp-ai-card-desc">
+        13 high-quality neural voices that run entirely on your device.
+        One-time download — works offline forever after.
+      </p>
+      <button class="vp-ai-dl-btn" id="vp-ai-dl-btn">
+        Download AI Voices
+      </button>
+      <div class="vp-ai-progress" id="vp-ai-progress" style="display:none">
+        <div class="vp-ai-progress-bar-wrap">
+          <div class="vp-ai-progress-fill" id="vp-ai-progress-fill"></div>
+        </div>
+        <span class="vp-ai-progress-label" id="vp-ai-progress-label">Starting…</span>
+      </div>
+    `;
+
+    const closeBtn  = card.querySelector<HTMLButtonElement>('.vp-ai-card-close')!;
+    const btn      = card.querySelector<HTMLButtonElement>('#vp-ai-dl-btn')!;
+    const progress = card.querySelector<HTMLElement>('#vp-ai-progress')!;
+    const fill     = card.querySelector<HTMLElement>('#vp-ai-progress-fill')!;
+    const label    = card.querySelector<HTMLElement>('#vp-ai-progress-label')!;
+
+    closeBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      this.st.aiVoicesDismissed = true;
+      this.saveAIVoicesDismissed(true);
+      this.renderVoiceList();
+      this.showToast('AI voices dismissed — reset to show again');
+    });
+
+    btn.addEventListener('click', () => {
+      btn.style.display = 'none';
+      progress.style.display = 'block';
+
+      downloadEngine('kokoro', (p: { status: 'downloading'|'ready'; percent: number; label: string; totalMB?: number }) => {
+        if (p.status === 'downloading') {
+          const pct   = p.percent;
+          const mbStr = p.totalMB ? ` of ${p.totalMB} MB` : '';
+          fill.style.width   = `${pct}%`;
+          label.textContent  = `${pct}%${mbStr}`;
+        } else {
+          // ready — aiModelReady will be set, voice list will re-render
+          fill.style.width  = '100%';
+          label.textContent = 'Done!';
+        }
+      });
+    });
+
+    return card;
   }
 
   private emptyState(msg: string): HTMLElement {
@@ -1293,9 +1651,19 @@ export class FloatingToolbar {
   private updateSelectedMeta(): void {
     const s = this.shadow;
     if (!s) return;
-    const voice = this.allVoices.find(v => v.name === this.st.voiceName);
+
     const nameEl = s.getElementById('vp-selected-name');
     const langEl = s.getElementById('vp-selected-lang');
+
+    // Check neural voices first
+    if (isNeuralVoiceId(this.st.voiceName)) {
+      const nv = ALL_NEURAL_VOICES.find(v => v.id === this.st.voiceName);
+      if (nameEl) nameEl.textContent = nv ? nv.name : this.st.voiceName;
+      if (langEl) langEl.textContent = nv ? `${nv.langLabel} · Neural ✦` : '';
+      return;
+    }
+
+    const voice = this.allVoices.find(v => v.name === this.st.voiceName);
     if (nameEl) nameEl.textContent = voice ? voice.name : '';
     if (langEl) langEl.textContent = voice
       ? this.getLangLabel(voice.lang) + (voice.localService ? '' : ' · Network ☁')
@@ -1314,17 +1682,16 @@ export class FloatingToolbar {
         return true;
       });
 
-      // Sync this.st.voiceName with whatever the content script has now —
-      // it may have been set from storage AFTER the toolbar was constructed.
-      // This prevents populateVoices from clobbering a valid saved voice
-      // just because this.st.voiceName was '' at construction time.
+      // Sync this.st.voiceName with whatever the content script has now.
       const liveVoice = this.cb.getVoiceName?.() ?? this.st.voiceName;
 
-      if (liveVoice && this.allVoices.some(v => v.name === liveVoice)) {
-        // Saved voice is available — sync it into st without firing onVoiceChange
+      // Neural voice IDs are always "available" — they just need a model download
+      const isAvailableVoice = (name: string) =>
+        isNeuralVoiceId(name) || this.allVoices.some(v => v.name === name);
+
+      if (liveVoice && isAvailableVoice(liveVoice)) {
         this.st.voiceName = liveVoice;
       } else if (!liveVoice) {
-        // No voice set at all — safe to auto-pick a default
         const preferred =
           this.allVoices.find(v => v.lang.startsWith('en') && v.localService) ??
           this.allVoices.find(v => v.lang.startsWith('en')) ??
@@ -1334,11 +1701,7 @@ export class FloatingToolbar {
           this.cb.onVoiceChange(preferred.name);
         }
       } else {
-        // liveVoice is set but not found in the current list.
-        // Do NOT auto-pick — the voice list may still be loading (Chrome
-        // sometimes delivers a partial list on the first voiceschanged event).
-        // Keep the stored voice name so it can be resolved on the next call.
-        this.st.voiceName = liveVoice; // keep it — don't clobber with a default
+        this.st.voiceName = liveVoice;
       }
 
       this.renderVoiceList();
@@ -1404,6 +1767,30 @@ export class FloatingToolbar {
       if (typeof x === 'number' && typeof y === 'number') return { x, y };
     } catch { /* ignore */ }
     return null;
+  }
+
+  private saveAIVoicesCollapsed(collapsed: boolean): void {
+    try { localStorage.setItem(FloatingToolbar.AI_VOICES_COLLAPSED_KEY, String(collapsed)); } catch { /* ignore */ }
+  }
+
+  private loadAIVoicesCollapsed(): boolean {
+    try {
+      const val = localStorage.getItem(FloatingToolbar.AI_VOICES_COLLAPSED_KEY);
+      return val === 'true';
+    } catch { /* ignore */ }
+    return true; // default: collapsed
+  }
+
+  private saveAIVoicesDismissed(dismissed: boolean): void {
+    try { localStorage.setItem(FloatingToolbar.AI_VOICES_DISMISSED_KEY, String(dismissed)); } catch { /* ignore */ }
+  }
+
+  private loadAIVoicesDismissed(): boolean {
+    try {
+      const val = localStorage.getItem(FloatingToolbar.AI_VOICES_DISMISSED_KEY);
+      return val === 'true';
+    } catch { /* ignore */ }
+    return false; // default: not dismissed
   }
 
   // ─── Slider helpers ───────────────────────────────────────────────────────────
@@ -2557,6 +2944,217 @@ export class FloatingToolbar {
       }
       .engine-error-retry:hover  { filter: brightness(1.15); }
       .engine-error-retry:active { transform: scale(0.95); }
+
+      /* ── Download button ─────────────────────────────────────────────────── */
+      .vp-download-btn {
+        flex-shrink: 0;
+        height: 20px;
+        padding: 0 7px;
+        border: 1px solid rgba(167,139,250,0.4);
+        border-radius: 5px;
+        background: rgba(167,139,250,0.1);
+        color: #a78bfa;
+        font-size: 10px;
+        font-weight: 600;
+        cursor: pointer;
+        font-family: inherit;
+        transition: background 0.12s, color 0.12s;
+        white-space: nowrap;
+      }
+      .vp-download-btn:hover:not(:disabled) { background: rgba(167,139,250,0.22); }
+      .vp-download-btn:disabled { opacity: 0.6; cursor: default; color: rgba(167,139,250,0.7); }
+
+      /* ── Voice preview button ────────────────────────────────────────────── */      .vp-preview-btn {
+        flex-shrink: 0;
+        width: 20px;
+        height: 20px;
+        border: none;
+        border-radius: 4px;
+        background: transparent;
+        color: var(--subtle);
+        font-size: 9px;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 0;
+        margin-right: 2px;
+        transition: color 0.12s, background 0.12s;
+        line-height: 1;
+      }
+      .vp-preview-btn:hover { color: var(--accent); background: rgba(2,119,212,0.12); }
+      .vp-preview-btn.vp-preview-active { color: #f87171; }
+      .vp-preview-btn.vp-preview-active:hover { color: #f87171; background: rgba(248,113,113,0.12); }
+
+      /* ── AI Download card ────────────────────────────────────────────────── */
+      .vp-ai-card {
+        margin: 6px 6px 4px;
+        padding: 10px 12px;
+        background: linear-gradient(135deg, rgba(124,58,237,0.12), rgba(167,139,250,0.06));
+        border: 1px solid rgba(167,139,250,0.25);
+        border-radius: 10px;
+      }
+      .vp-ai-card-header {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        margin-bottom: 6px;
+      }
+      .vp-ai-card-icon { font-size: 12px; color: #a78bfa; }
+      .vp-ai-card-title { font-size: 12px; font-weight: 700; color: #c4b5fd; flex: 1; }
+      .vp-ai-card-close {
+        all: unset;
+        width: 16px;
+        height: 16px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: var(--subtle);
+        cursor: pointer;
+        font-size: 11px;
+        border-radius: 4px;
+        transition: color 0.12s, background 0.12s;
+        flex-shrink: 0;
+      }
+      .vp-ai-card-close:hover { color: #f0f4ff; background: rgba(255,255,255,0.08); }
+      .vp-ai-card-close:active { transform: scale(0.88); }
+      .vp-ai-card-desc {
+        font-size: 10px;
+        color: rgba(255,255,255,0.45);
+        line-height: 1.5;
+        margin: 0 0 10px;
+      }
+      .vp-ai-dl-btn {
+        width: 100%;
+        padding: 7px 0;
+        background: linear-gradient(135deg, #7c3aed, #a78bfa);
+        border: none;
+        border-radius: 7px;
+        color: #fff;
+        font-size: 11px;
+        font-weight: 700;
+        font-family: inherit;
+        cursor: pointer;
+        transition: filter 0.15s, transform 0.1s;
+        letter-spacing: 0.02em;
+      }
+      .vp-ai-dl-btn:hover  { filter: brightness(1.15); }
+      .vp-ai-dl-btn:active { transform: scale(0.97); }
+      .vp-ai-progress { margin-top: 2px; }
+      .vp-ai-progress-bar-wrap {
+        width: 100%;
+        height: 4px;
+        background: rgba(167,139,250,0.15);
+        border-radius: 4px;
+        overflow: hidden;
+        margin-bottom: 5px;
+      }
+      .vp-ai-progress-fill {
+        height: 100%;
+        background: linear-gradient(90deg, #7c3aed, #a78bfa);
+        border-radius: 4px;
+        width: 0%;
+        transition: width 0.4s ease;
+      }
+      .vp-ai-progress-label {
+        font-size: 10px;
+        color: #a78bfa;
+        font-weight: 500;
+      }
+
+      /* ── Neural voice section header ─────────────────────────────────────── */
+      .vp-group-header-neural {
+        color: #a78bfa;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+      }
+      .vp-collapse-btn {
+        all: unset;
+        width: 18px;
+        height: 18px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        cursor: pointer;
+        border-radius: 4px;
+        color: var(--muted);
+        transition: color 0.12s, background 0.12s;
+        flex-shrink: 0;
+      }
+      .vp-collapse-btn:hover { background: rgba(255,255,255,0.08); color: #a78bfa; }
+      .vp-collapse-btn svg { width: 14px; height: 14px; }
+      .vp-neural-badge {
+        font-size: 8px;
+        font-weight: 700;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        padding: 1px 5px;
+        border-radius: 4px;
+        background: rgba(167,139,250,0.15);
+        border: 1px solid rgba(167,139,250,0.3);
+        color: #a78bfa;
+      }
+
+      /* Sub-header (language group inside a section) */
+      .vp-group-subheader {
+        padding: 4px 10px 2px;
+        font-size: 9px;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        color: var(--subtle);
+        background: transparent;
+      }
+
+      /* Neural row tint */
+      .vp-row-neural .vp-row-name { color: #c4b5fd; }
+      .vp-row-neural.vp-row-selected .vp-row-name { color: #fff; }
+
+      /* Engine badge on neural rows */
+      .vp-badge-neural {
+        font-size: 9px;
+        font-weight: 600;
+        padding: 1px 5px;
+        border-radius: 4px;
+        background: rgba(167,139,250,0.12);
+        border: 1px solid rgba(167,139,250,0.25);
+        color: #a78bfa;
+        flex-shrink: 0;
+      }
+      .vp-badge-grade {
+        font-size: 10px;
+        color: #fbbf24;
+        flex-shrink: 0;
+        line-height: 1;
+      }
+
+      /* ── Neural progress bar ─────────────────────────────────────────────── */
+      #spokn-neural-progress {
+        display: none;
+        padding: 6px 2px 4px;
+      }
+      .neural-progress-label {
+        display: block;
+        font-size: 10px;
+        color: #a78bfa;
+        margin-bottom: 5px;
+        font-weight: 500;
+      }
+      .neural-progress-track {
+        width: 100%;
+        height: 3px;
+        background: rgba(167,139,250,0.15);
+        border-radius: 3px;
+        overflow: hidden;
+      }
+      .neural-progress-fill {
+        height: 100%;
+        background: linear-gradient(90deg, #7c3aed, #a78bfa);
+        border-radius: 3px;
+        transition: width 0.3s ease;
+        width: 0%;
+      }
 
     `;
   }

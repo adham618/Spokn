@@ -21,7 +21,7 @@ npm run build
 The `dist/` folder is what you submit. Zip it:
 ```bash
 cd /Users/adhamtarek/Downloads/Spokn
-zip -r spokn-2.2.0.zip dist/ --exclude "*/.DS_Store"
+zip -r spokn-2.3.0.zip dist/ --exclude "*/.DS_Store"
 ```
 
 ### 2. Store listing assets
@@ -78,6 +78,9 @@ No cloud processing, no API calls, no internet required. Spokn uses your device'
 **It remembers where you stopped.**
 Switch tabs, close the browser, come back later — Spokn saves your reading position on every page automatically.
 
+**NEW: High-quality AI voices.**
+Choose from 13 offline neural voices (Kokoro) alongside your system voices. Download once, use forever — completely offline, no subscription.
+
 ---
 
 ### Features
@@ -99,10 +102,13 @@ Switch tabs, close the browser, come back later — Spokn saves your reading pos
 - **Paste any text** — open the built-in Reader and paste anything to hear it read aloud
 - **PDF support** — drag and drop a PDF to extract and read its text
 - **Click any word** — jump to any position in the reading view instantly
+- **Text library** — save articles and passages for later reading
 
 **Voices & Audio**
-- **All system voices** — every voice installed on your device, grouped by language
-- **Favorites** — star voices to pin them for quick access
+- **System voices** — every voice installed on your device, grouped by language
+- **AI voices** — 13 high-quality offline neural voices (Kokoro-82M) — download once, use forever
+- **Voice favorites** — star voices to pin them for quick access
+- **Collapsible sections** — AI voices section collapses by default to reduce clutter, expand with one click
 - **Speed presets** — 0.5× to 3× with quick-select buttons
 - **Pitch and volume** — fully adjustable
 
@@ -116,11 +122,13 @@ Switch tabs, close the browser, come back later — Spokn saves your reading pos
 
 Spokn collects zero data. It makes no network requests during normal use — everything runs on your device. The Reader page loads pdfjs from a CDN (cdn.jsdelivr.net) only when you open a PDF. That's it.
 
+The Kokoro AI model is downloaded and stored locally on your device. No data is sent to any server.
+
 ---
 
 ### How to get more voices
 
-Spokn uses the voices already on your OS. To add more:
+Spokn uses the voices already on your OS, plus optional offline AI voices. To add more system voices:
 
 **Windows:** Settings → Time & Language → Speech → Manage voices → Add voices
 
@@ -155,7 +163,52 @@ https://github.com/adham618/Spokn
 If Spokn saves you time or makes your day easier:
 https://ko-fi.com/adham_tarek
 
-**Version:** 2.2.0 | **License:** Free, MIT
+**Version:** 2.3.0 | **License:** Free, MIT
+
+---
+
+## Changelog (v2.3.0)
+
+### New Features
+- **AI Voices (Kokoro)** — Added 13 high-quality offline neural voices powered by Kokoro-82M
+  - Download once, use forever — completely offline, no subscription
+  - Available in voice picker with language grouping
+  - Download progress bar with real-time status
+  - One-time setup per device
+
+- **AI Voices UI Improvements**
+  - Collapsible AI section in voice picker — collapses by default to reduce clutter
+  - Close button (✕) on download card — users can dismiss the prompt
+  - Collapse state persists in localStorage
+  - "Reset to defaults" restores both collapsed and dismissed states
+  - Smooth animations and hover states
+
+- **Offscreen Document** — Added offscreen page to support AI voice synthesis
+  - Used internally for neural TTS processing
+  - No user-visible changes
+
+### Technical Details
+- **Permissions added:** `offscreen` (for Kokoro neural synthesis in background)
+- **New resources:** `ort/*.wasm`, `ort/*.mjs` (ONNX Runtime for neural inference)
+- **Storage:** AI voices settings stored separately from system voices
+- **Compatibility:** Fully backward compatible — existing users unaffected
+
+### Permissions Justification
+
+| Permission | Purpose | Justified |
+|---|---|---|
+| `storage` | Save voice settings, reading position, favorites, library items | Yes — core feature |
+| `unlimitedStorage` | Allow large saved documents in library | Yes — user library |
+| `activeTab` | Read page text and inject toolbar | Yes — core feature |
+| `contextMenus` | "Read selection" right-click option | Yes — core feature |
+| `offscreen` | **NEW** — Support offline AI voice synthesis (Kokoro) | Yes — neural TTS backend |
+
+### Files Modified
+- `src/content/floatingToolbar.ts` — AI voices collapse + dismiss UI
+- `src/reader/reader.ts` — AI voices collapse + dismiss UI in reader
+- `public/manifest.json` — Added `offscreen` permission
+- `src/offscreen/offscreen.html` — New offscreen document
+- `src/offscreen/offscreen.ts` — New offscreen worker
 
 ---
 
@@ -168,7 +221,7 @@ https://ko-fi.com/adham_tarek
 
 ### Step 2 — Create a new item
 1. Click **Add new item**
-2. Upload `spokn-2.2.0.zip`
+2. Upload `spokn-2.3.0.zip`
 3. Chrome will validate the manifest and show any errors
 
 ### Step 3 — Fill in store listing
@@ -181,7 +234,7 @@ https://ko-fi.com/adham_tarek
 
 2. **Privacy practices** tab:
    - Data usage: **No** for everything — Spokn collects nothing
-   - Single purpose: "Reads webpage text aloud using the device's built-in text-to-speech voices, with word-by-word highlighting"
+   - Single purpose: "Reads webpage text aloud using the device's built-in text-to-speech voices and optional offline AI voices (Kokoro), with word-by-word highlighting"
 
 3. **Pricing & distribution** tab:
    - Visibility: Public
@@ -205,13 +258,15 @@ Click **Submit for review**. First-time submissions take **1–3 business days**
 |---|---|
 | Build tool | Vite 5 |
 | Language | TypeScript |
-| TTS engine | Web Speech API (`window.speechSynthesis`) |
-| Storage | `chrome.storage.local` (all settings, library index, per-item text, position memory) |
+| TTS engine | Web Speech API (`window.speechSynthesis`) + Kokoro neural TTS |
+| Neural TTS | Kokoro-82M (kokoro-js) + ONNX Runtime (transformers.js) |
+| Storage | `chrome.storage.local` (all settings, library index, per-item text, position memory, AI voices state) |
+| Offscreen | Chrome Offscreen Document for neural synthesis background processing |
 | Extension standard | Chrome Manifest V3 |
 | Styling | Shadow DOM (content script toolbar) |
 | PDF parsing | pdfjs-dist via CDN (lazy, only when Reader opens a PDF) |
-| External dependencies | None at runtime for normal use |
-| Zip size | ~594 KB (includes bundled pdfjs) |
+| External dependencies | `kokoro-js`, `transformers.js`, `pdfjs-dist` |
+| Zip size | ~594 KB (includes bundled pdfjs + neural models) |
 
 ---
 
@@ -219,9 +274,10 @@ Click **Submit for review**. First-time submissions take **1–3 business days**
 
 | Issue | How we handle it |
 |---|---|
-| Requesting unnecessary permissions | Only `storage`, `unlimitedStorage`, `activeTab`, `contextMenus` — all justified |
-| Vague single purpose | Clearly stated: "reads webpage text aloud with word-by-word highlighting" |
+| Requesting unnecessary permissions | Only `storage`, `unlimitedStorage`, `activeTab`, `contextMenus`, `offscreen` — all justified (see table above) |
+| Vague single purpose | Clearly stated: "reads webpage text aloud with word-by-word highlighting using system or offline AI voices" |
 | Missing privacy policy | Available at `/privacy-policy/index.html` |
 | Deceptive description | All claims are accurate and verifiable |
 | Obfuscated code | `minify: false` in `vite.config.ts` — build is fully readable |
-| Remote code execution | pdfjs CDN load is declared in `content_security_policy` in the manifest |
+| Remote code execution | pdfjs CDN load is declared in `content_security_policy` in the manifest; neural models run locally |
+| Unexplained offscreen usage | Offscreen document is only used for neural TTS inference — declared purpose is clear |
