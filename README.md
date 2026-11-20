@@ -21,10 +21,13 @@ Offline text-to-speech Chrome extension with word-by-word highlighting. Reads an
 - **4 reading themes** — Dark, Sepia, Paper, Focus — with matching font, background, and spacing
 - **9 highlight themes** — Yellow, Sky, Mint, Coral, Violet, Warm, Rose, Dark, Light
 - **Voice picker** — tabbed All/Favorites picker, grouped by language, with search and star/pin
+  - **System voices** — all voices from your OS
+  - **AI voices** — 13 high-quality offline neural voices (Kokoro-82M) — download once, use forever
+  - **Collapsible sections** — AI voices collapse by default to reduce clutter
 - **Speed presets** — 0.5× / 0.8× / 1× / 1.5× / 2× / 2.5× / 3× quick-select buttons
 - **Speed, pitch, volume** — fully adjustable with +/− buttons and persisted across sessions
 - **Keyboard shortcuts** — play/pause, stop, read selection, open reader without touching the mouse
-- **100% offline** — uses only `window.speechSynthesis` with local system voices
+- **100% offline** — uses local system voices + optional offline AI voices (no internet required)
 - **No ads, no tracking, no accounts**
 
 ## Keyboard Shortcuts
@@ -42,8 +45,9 @@ Offline text-to-speech Chrome extension with word-by-word highlighting. Reads an
 - **Reader page** — Vanilla TypeScript
 - **Build tool** — Vite + `vite-plugin-web-extension`
 - **Manifest** — Chrome Manifest V3
-- **Storage** — `chrome.storage.local` (all extension settings, library index, per-item text, position memory)
-- **TTS** — `window.speechSynthesis` (local voices only)
+- **Storage** — `chrome.storage.local` (all extension settings, library index, per-item text, position memory, AI voices state)
+- **TTS** — `window.speechSynthesis` (local system voices) + Kokoro-82M neural TTS (optional offline AI voices)
+- **Neural TTS** — kokoro-js + ONNX Runtime (transformers.js) — runs entirely offline in an offscreen document
 - **PDF parsing** — pdfjs-dist loaded lazily from CDN (only when a PDF is opened in the Reader)
 
 ## Project Structure
@@ -60,20 +64,27 @@ spokn/
 │   │   ├── highlighter.ts     # Word highlight manager
 │   │   ├── textWalker.ts      # DOM walker & word span injector
 │   │   ├── floatingToolbar.ts # Draggable Shadow DOM toolbar
+│   │   ├── neuralVoices.ts    # AI voices picker UI
+│   │   ├── neuralTts.ts       # Kokoro neural TTS wrapper
 │   │   ├── highlightTheme.ts  # Theme CSS variable injector
 │   │   └── content.css        # Highlight & hover styles
 │   ├── reader/                # Standalone reader page
 │   │   ├── reader.html
 │   │   └── reader.ts          # Paste text / load PDF + full playback UI
+│   ├── offscreen/             # Offscreen document for neural TTS
+│   │   ├── offscreen.html
+│   │   └── offscreen.ts       # Neural inference worker
 │   ├── background/
-│   │   └── background.ts      # Service worker & message relay
+│   │   ├── background.ts      # Service worker & message relay
+│   │   └── neuralBridge.ts    # Neural TTS message bridge
+│   ├── stubs/
+│   │   └── node-empty.ts      # Node.js stub for WASM builds
 │   └── shared/
 │       ├── types.ts            # PlaybackState, ReadingMode
 │       └── messages.ts         # Message union types
 ├── privacy-policy/
 │   └── index.html
 ├── vite.config.ts
-├── svelte.config.js
 ├── tsconfig.json
 └── package.json
 ```
