@@ -174,6 +174,7 @@
 
   async function handleResetConfirm() {
     resetConfirmVisible = false;
+    // Reset all stored data including banner dismissal
     await chrome.storage.sync.clear();
     await sendToTab({ type: 'RESET_SETTINGS' });
     playbackState = { ...DEFAULT_STATE };

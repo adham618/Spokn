@@ -1273,6 +1273,7 @@ function skipParagraph(dir: 'prev' | 'next'): void {
 const ICON_PLAY  = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="8 4.5 11.75 15" aria-hidden="true" style="transform:translateX(2px)"><path d="M8 5.5v13a1 1 0 0 0 1.53.85l9.75-6.5a1 1 0 0 0 0-1.7l-9.75-6.5A1 1 0 0 0 8 5.5Z"/></svg>`;
 const ICON_PAUSE = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="4.5 0 27 36" aria-hidden="true"><path d="M9,0A4.50022,4.50022,0,0,0,4.5,4.5v27a4.5,4.5,0,0,0,9,0V4.5A4.50022,4.50022,0,0,0,9,0Z"/><path d="M27,0a4.50022,4.50022,0,0,0-4.5,4.5v27a4.5,4.5,0,0,0,9,0V4.5A4.50022,4.50022,0,0,0,27,0Z"/></svg>`;
 const ICON_LOADING = `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" aria-hidden="true" style="animation:spokn-spin 0.75s linear infinite"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-opacity="0.25"/><path d="M12 3a9 9 0 0 1 9 9"/></svg>`;
+const ICON_INFO = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>`;
 const ICON_SKIP_NEXT = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="10 25 80 50" width="14" height="14" fill="currentColor" aria-hidden="true"><path d="M74.22 45.88 43.49 25.61a4.03 4.03 0 0 0-3.75-.12c-1.38.8-2.23 2.42-2.23 4.24v10.08l-21.52-14.2a4.03 4.03 0 0 0-3.75-.12c-1.38.8-2.23 2.42-2.23 4.24v40.55c0 1.82.86 3.44 2.23 4.24a4.03 4.03 0 0 0 3.75-.12l21.52-14.2v10.08c0 1.82.86 3.44 2.23 4.24.61.41 1.29.61 1.97.61s1.36-.2 1.97-.61l30.73-20.27c1.28-.84 2.04-2.38 2.04-4.12s-.76-3.28-2.04-4.12Z"/><path d="M83.72 25c-3.46 0-6.28 2.96-6.28 6.6v36.8c0 3.64 2.82 6.6 6.28 6.6S90 72.04 90 68.4V31.6c0-3.64-2.82-6.6-6.28-6.6Z"/></svg>`;
 const ICON_SKIP_PREV = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="10 25 80 50" width="14" height="14" fill="currentColor" aria-hidden="true" style="transform:scaleX(-1)"><path d="M74.22 45.88 43.49 25.61a4.03 4.03 0 0 0-3.75-.12c-1.38.8-2.23 2.42-2.23 4.24v10.08l-21.52-14.2a4.03 4.03 0 0 0-3.75-.12c-1.38.8-2.23 2.42-2.23 4.24v40.55c0 1.82.86 3.44 2.23 4.24a4.03 4.03 0 0 0 3.75-.12l21.52-14.2v10.08c0 1.82.86 3.44 2.23 4.24.61.41 1.29.61 1.97.61s1.36-.2 1.97-.61l30.73-20.27c1.28-.84 2.04-2.38 2.04-4.12s-.76-3.28-2.04-4.12Z"/><path d="M83.72 25c-3.46 0-6.28 2.96-6.28 6.6v36.8c0 3.64 2.82 6.6 6.28 6.6S90 72.04 90 68.4V31.6c0-3.64-2.82-6.6-6.28-6.6Z"/></svg>`;
 
@@ -2496,6 +2497,22 @@ function buildUI(): void {
             </div>
 
             <div class="settings-section-title">Voice</div>
+
+            <!-- AI Voices delay banner -->
+            ${!readerAIVoicesDismissed ? `
+            <div class="ai-voices-banner-wrapper" id="ai-voices-banner-wrapper">
+              <div class="ai-voices-banner">
+                <div class="ai-voices-banner-content">
+                  <span class="ai-voices-banner-icon">${ICON_INFO}</span>
+                  <div class="ai-voices-banner-text">
+                    <strong>AI voices have a 2–10s startup delay</strong> per chunk. For instant playback, try system voices.
+                  </div>
+                </div>
+                <button class="ai-voices-banner-close" id="ai-voices-banner-close" title="Dismiss" aria-label="Dismiss AI voices delay notice">✕</button>
+              </div>
+            </div>
+            ` : ''}
+
             <div class="voice-picker">
               <div class="vp-tabs" role="tablist">
                 <button class="vp-tab vp-tab-active" id="vp-tab-all" role="tab" aria-selected="true">All</button>
@@ -2893,6 +2910,22 @@ function attachListeners(): void {
   if (speechSynthesis.getVoices().length > 0) populateVoices();
   else speechSynthesis.addEventListener('voiceschanged', populateVoices, { once: true });
 
+  // AI voices banner dismiss button (reader page)
+  document.getElementById('ai-voices-banner-close')?.addEventListener('click', (e) => {
+    e.preventDefault();
+    const wrapper = document.getElementById('ai-voices-banner-wrapper');
+    if (wrapper) {
+      wrapper.style.opacity = '0';
+      wrapper.style.transform = 'translateY(-8px)';
+      wrapper.style.pointerEvents = 'none';
+      wrapper.style.transition = 'opacity 0.15s ease, transform 0.15s ease';
+      setTimeout(() => {
+        wrapper.remove();
+        saveReaderAIVoicesDismissed(true);
+      }, 150);
+    }
+  });
+
     // Warm up Kokoro only if already downloaded
     setTimeout(() => { if (isAIModelReady()) preloadKokoro(); }, 3000);
 }
@@ -3247,6 +3280,55 @@ function injectStyles(): void {
     }
     .vp-ai-card-close:hover { color: #e8edf5; background: rgba(255,255,255,0.08); }
     .vp-ai-card-close:active { transform: scale(0.88); }
+
+    /* ── AI Voices delay banner (reader page) ────────────────────────────── */
+    .ai-voices-banner-wrapper {
+      margin-bottom: 10px;
+      animation: slideDown 0.2s ease;
+    }
+    .ai-voices-banner {
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+      padding: 10px 12px;
+      background: rgba(59, 130, 246, 0.1);
+      border: 1px solid rgba(59, 130, 246, 0.3);
+      border-radius: 8px;
+    }
+    .ai-voices-banner-content {
+      display: flex;
+      align-items: flex-start;
+      gap: 8px;
+      flex: 1;
+    }
+    .ai-voices-banner-icon {
+      font-size: 14px;
+      line-height: 1.4;
+      flex-shrink: 0;
+    }
+    .ai-voices-banner-text {
+      font-size: 12px;
+      color: #cbd5e1;
+      line-height: 1.4;
+    }
+    .ai-voices-banner-text strong {
+      color: #3b82f6;
+      font-weight: 600;
+    }
+    .ai-voices-banner-close {
+      background: none;
+      border: none;
+      color: #64748b;
+      font-size: 14px;
+      cursor: pointer;
+      padding: 0 2px;
+      line-height: 1;
+      transition: color 0.15s;
+      flex-shrink: 0;
+    }
+    .ai-voices-banner-close:hover {
+      color: #94a3b8;
+    }
 
     /* ── Neural voice section collapse button ────────────────────────────── */
     .vp-collapse-btn {

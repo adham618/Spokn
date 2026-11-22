@@ -21,6 +21,30 @@
   let allVoices: SpeechSynthesisVoice[] = $state([]);
   let loaded = $state(false);
   let search = $state('');
+  let dismissedAIBanner = $state(false);
+
+  // Load banner dismissal state from storage
+  async function loadBannerState() {
+    try {
+      const stored = await chrome.storage.sync.get('dismissedAIBanner');
+      if (stored.dismissedAIBanner) dismissedAIBanner = true;
+    } catch {}
+  }
+
+  // Save banner dismissal to storage
+  async function saveBannerDismissed() {
+    try {
+      await chrome.storage.sync.set({ dismissedAIBanner: true });
+    } catch {}
+  }
+
+  // Reset banner dismissal state
+  export async function resetBannerState() {
+    dismissedAIBanner = false;
+    try {
+      await chrome.storage.sync.remove('dismissedAIBanner');
+    } catch {}
+  }
 
   // Intl.DisplayNames for language labels
   const langNames = new Intl.DisplayNames([navigator.language, 'en'], { type: 'language' });
@@ -50,6 +74,7 @@
   }
 
   onMount(() => {
+    loadBannerState();
     loadVoices();
     if (!loaded) {
       speechSynthesis.addEventListener('voiceschanged', loadVoices, { once: true });
@@ -114,6 +139,31 @@
   let selectedVoice = $derived(allVoices.find(v => v.name === value) ?? null);
   let isFav = $derived(value ? favorites.includes(value) : false);
 </script>
+
+<!-- ── AI Voices delay banner ──────────────────────────────────────────── -->
+{#if !dismissedAIBanner}
+  <div class="ai-banner">
+    <div class="ai-banner-content">
+      <span class="ai-banner-icon">
+        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+      </span>
+      <div class="ai-banner-text">
+        <strong>AI voices have a 2–10s startup delay</strong> per chunk. For instant playback, try Google voices in Chrome or system voices.
+      </div>
+    </div>
+    <button
+      class="ai-banner-close"
+      onclick={async () => {
+        dismissedAIBanner = true;
+        await saveBannerDismissed();
+      }}
+      title="Dismiss"
+      aria-label="Dismiss AI voices delay notice"
+    >
+      ✕
+    </button>
+  </div>
+{/if}
 
 <!-- ── Label row ─────────────────────────────────────────────────────────── -->
 <div class="field">
@@ -204,6 +254,59 @@
     display: flex;
     flex-direction: column;
     gap: 7px;
+  }
+
+  /* ── AI Banner ── */
+  .ai-banner {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    padding: 10px 12px;
+    background: rgba(59, 130, 246, 0.1);
+    border: 1px solid rgba(59, 130, 246, 0.3);
+    border-radius: 8px;
+    margin-bottom: 8px;
+    animation: slideDown 0.2s ease;
+  }
+
+  .ai-banner-content {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    flex: 1;
+  }
+
+  .ai-banner-icon {
+    font-size: 14px;
+    line-height: 1.4;
+    flex-shrink: 0;
+  }
+
+  .ai-banner-text {
+    font-size: 12px;
+    color: #cbd5e1;
+    line-height: 1.4;
+  }
+
+  .ai-banner-text strong {
+    color: #3b82f6;
+    font-weight: 600;
+  }
+
+  .ai-banner-close {
+    background: none;
+    border: none;
+    color: #64748b;
+    font-size: 14px;
+    cursor: pointer;
+    padding: 0 2px;
+    line-height: 1;
+    transition: color 0.15s;
+    flex-shrink: 0;
+  }
+
+  .ai-banner-close:hover {
+    color: #94a3b8;
   }
 
   /* ── Label row ── */

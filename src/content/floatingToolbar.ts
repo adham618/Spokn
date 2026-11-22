@@ -81,6 +81,7 @@ const ICONS = {
   filetext: `<svg ${SVG_ATTRS}><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>`,
   pointer:  `<svg ${SVG_ATTRS}><path d="M4 4l7.07 17 2.51-7.39L21 11.07z"/></svg>`,
   cursor:   `<svg ${SVG_ATTRS}><path d="M5 3l14 9-7 1-4 7z"/></svg>`,
+  info:     `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>`,
   // Feature: skip sentence icons — same SVG, prev is mirrored with CSS
   skipNext: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="10 25 80 50" width="13" height="13" fill="currentColor" aria-hidden="true"><path d="M74.22 45.88 43.49 25.61a4.03 4.03 0 0 0-3.75-.12c-1.38.8-2.23 2.42-2.23 4.24v10.08l-21.52-14.2a4.03 4.03 0 0 0-3.75-.12c-1.38.8-2.23 2.42-2.23 4.24v40.55c0 1.82.86 3.44 2.23 4.24a4.03 4.03 0 0 0 3.75-.12l21.52-14.2v10.08c0 1.82.86 3.44 2.23 4.24.61.41 1.29.61 1.97.61s1.36-.2 1.97-.61l30.73-20.27c1.28-.84 2.04-2.38 2.04-4.12s-.76-3.28-2.04-4.12Z"/><path d="M83.72 25c-3.46 0-6.28 2.96-6.28 6.6v36.8c0 3.64 2.82 6.6 6.28 6.6S90 72.04 90 68.4V31.6c0-3.64-2.82-6.6-6.28-6.6Z"/></svg>`,
   skipPrev: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="10 25 80 50" width="13" height="13" fill="currentColor" aria-hidden="true" class="skip-prev-icon"><path d="M74.22 45.88 43.49 25.61a4.03 4.03 0 0 0-3.75-.12c-1.38.8-2.23 2.42-2.23 4.24v10.08l-21.52-14.2a4.03 4.03 0 0 0-3.75-.12c-1.38.8-2.23 2.42-2.23 4.24v40.55c0 1.82.86 3.44 2.23 4.24a4.03 4.03 0 0 0 3.75-.12l21.52-14.2v10.08c0 1.82.86 3.44 2.23 4.24.61.41 1.29.61 1.97.61s1.36-.2 1.97-.61l30.73-20.27c1.28-.84 2.04-2.38 2.04-4.12s-.76-3.28-2.04-4.12Z"/><path d="M83.72 25c-3.46 0-6.28 2.96-6.28 6.6v36.8c0 3.64 2.82 6.6 6.28 6.6S90 72.04 90 68.4V31.6c0-3.64-2.82-6.6-6.28-6.6Z"/></svg>`,
@@ -483,6 +484,21 @@ export class FloatingToolbar {
               </button>
             </div>
           </div>
+
+          <!-- AI Voices delay banner -->
+          ${!this.st.aiVoicesDismissed ? `
+          <div class="ai-voices-banner-wrapper" id="ai-voices-banner-wrapper">
+            <div class="ai-voices-banner">
+              <div class="ai-voices-banner-content">
+                <span class="ai-voices-banner-icon">${ICONS.info}</span>
+                <div class="ai-voices-banner-text">
+                  <strong>AI voices have a 2–10s startup delay</strong> per chunk. For instant playback, try system voices.
+                </div>
+              </div>
+              <button class="ai-voices-banner-close" aria-label="Dismiss AI voices delay notice" title="Dismiss">✕</button>
+            </div>
+          </div>
+          ` : ''}
 
           <!-- ── Voice picker ─────────────────────────────────────────────── -->
           <div class="voice-picker">
@@ -925,6 +941,13 @@ export class FloatingToolbar {
         this.saveAIVoicesCollapsed(true);
         this.cb.onReset();
       }
+    });
+
+    // AI voices banner close button
+    s.querySelector<HTMLButtonElement>('.ai-voices-banner-close')?.addEventListener('click', async () => {
+      this.st.aiVoicesDismissed = true;
+      this.saveAIVoicesDismissed(true);
+      s.getElementById('ai-voices-banner-wrapper')?.remove();
     });
 
     s.getElementById('spokn-share-btn')?.addEventListener('click', () => {
@@ -2944,6 +2967,88 @@ export class FloatingToolbar {
       }
       .engine-error-retry:hover  { filter: brightness(1.15); }
       .engine-error-retry:active { transform: scale(0.95); }
+
+      /* ── AI voices banner in settings ────────────────────────────────────── */
+      .ai-voices-banner-wrapper {
+        display: flex;
+        align-items: flex-start;
+        margin: -4px -6px 10px;
+        padding: 0;
+        animation: slideDown 0.2s ease;
+      }
+
+      .ai-voices-banner {
+        display: flex;
+        align-items: flex-start;
+        gap: 10px;
+        padding: 10px 12px;
+        background: rgba(59, 130, 246, 0.1);
+        border: 1px solid rgba(59, 130, 246, 0.3);
+        border-radius: 8px;
+        width: 100%;
+      }
+
+      .ai-voices-banner-content {
+        display: flex;
+        align-items: flex-start;
+        gap: 8px;
+        flex: 1;
+      }
+
+      .ai-voices-banner-icon {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 14px;
+        line-height: 1.4;
+        flex-shrink: 0;
+        color: #3b82f6;
+      }
+
+      .ai-voices-banner-icon svg {
+        width: 14px;
+        height: 14px;
+        stroke: #3b82f6;
+      }
+
+      .ai-voices-banner-text {
+        font-size: 12px;
+        color: #cbd5e1;
+        line-height: 1.4;
+      }
+
+      .ai-voices-banner-text strong {
+        color: #3b82f6;
+        font-weight: 600;
+      }
+
+      .ai-voices-banner-close {
+        all: unset;
+        background: none;
+        border: none;
+        color: #64748b;
+        font-size: 14px;
+        cursor: pointer;
+        padding: 0 2px;
+        line-height: 1;
+        transition: color 0.15s;
+        flex-shrink: 0;
+      }
+
+      .ai-voices-banner-close:hover {
+        color: #94a3b8;
+      }
+
+      @keyframes slideDown {
+        from {
+          opacity: 0;
+          transform: translateY(-8px);
+        }
+        to {
+          opacity: 1;
+          transform: translateY(0);
+        }
+      }
 
       /* ── Download button ─────────────────────────────────────────────────── */
       .vp-download-btn {

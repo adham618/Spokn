@@ -21,7 +21,7 @@ npm run build
 The `dist/` folder is what you submit. Zip it:
 ```bash
 cd /Users/adhamtarek/Downloads/Spokn
-zip -r spokn-2.3.0.zip dist/ --exclude "*/.DS_Store"
+zip -r spokn-2.4.0.zip dist/ --exclude "*/.DS_Store"
 ```
 
 ### 2. Store listing assets
@@ -163,11 +163,29 @@ https://github.com/adham618/Spokn
 If Spokn saves you time or makes your day easier:
 https://ko-fi.com/adham_tarek
 
-**Version:** 2.3.0 | **License:** Free, MIT
+**Version:** 2.4.0 | **License:** Free, MIT
 
 ---
 
-## Changelog (v2.3.0)
+## Changelog (v2.4.0)
+
+### New Features
+- **AI Voices Delay Banner** — Added dismissible info banner in popup and reader pages
+  - Informs users that AI voices have 2–10s startup delay per chunk
+  - Suggests Google voices in Chrome or system voices for instant playback
+  - Dismissal state persists in storage (`chrome.storage.sync` for popup, `localStorage` for reader)
+  - Banner reappears when user clicks "Reset to Defaults"
+  - Smooth animations and hover states
+
+### Technical Details
+- **Popup:** Banner dismissal stored in `chrome.storage.sync` as `dismissedAIBanner`
+- **Reader:** Banner dismissal stored in `localStorage` with key `spokn-reader-ai-voices-dismissed`
+- **Reset behavior:** "Reset to Defaults" clears both dismissal states, allowing banner to appear again
+- **Storage:** Uses existing persistence patterns, no new permissions required
+
+---
+
+## Previous Release (v2.3.0)
 
 ### New Features
 - **AI Voices (Kokoro)** — Added 13 high-quality offline neural voices powered by Kokoro-82M
@@ -221,7 +239,7 @@ https://ko-fi.com/adham_tarek
 
 ### Step 2 — Create a new item
 1. Click **Add new item**
-2. Upload `spokn-2.3.0.zip`
+2. Upload `spokn-2.4.0.zip`
 3. Chrome will validate the manifest and show any errors
 
 ### Step 3 — Fill in store listing
@@ -247,7 +265,7 @@ Click **Submit for review**. First-time submissions take **1–3 business days**
 ### Step 5 — After approval
 - Share your Chrome Web Store URL
 - Update the Ko-fi link in `.env` if needed
-- For future updates: bump `version` in `package.json`, `vite.config.ts`, and `VITE_APP_VERSION` in `.env`, rebuild, re-zip, upload
+- For future updates: bump `version` in `package.json`, `.env` (VITE_APP_VERSION), and rebuild, re-zip, upload
 - `VITE_STORE_URL` in `.env` should match your Chrome Web Store listing URL
 
 ---
